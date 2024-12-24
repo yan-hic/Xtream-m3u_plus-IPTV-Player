@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QLineEdit, QLabel, QPushButton,
     QListWidget, QWidget, QFileDialog, QCheckBox, QSizePolicy, QHBoxLayout,
     QDialog, QFormLayout, QDialogButtonBox, QTabWidget, QListWidgetItem,
-    QSpinBox, QMenu, QAction, QTextEdit
+    QSpinBox, QMenu, QAction, QTextEdit, QGridLayout
 )
 
 CUSTOM_USER_AGENT = (
@@ -133,6 +133,15 @@ class AddressBookDialog(QtWidgets.QDialog):
         self.parent = parent
 
         layout = QtWidgets.QVBoxLayout(self)
+
+        startup_credential_layout = QHBoxLayout()
+        self.startup_credential_label = QLabel("Startup address:")
+        self.startup_credential_options = QtWidgets.QComboBox()
+        self.startup_credential_options.currentTextChanged.connect(self.set_startup_credentials)
+        startup_credential_layout.addWidget(self.startup_credential_label)
+        startup_credential_layout.addWidget(self.startup_credential_options)
+        layout.addLayout(startup_credential_layout)
+
         self.credentials_list = QtWidgets.QListWidget()
         layout.addWidget(self.credentials_list)
 
@@ -155,13 +164,41 @@ class AddressBookDialog(QtWidgets.QDialog):
         self.delete_button.clicked.connect(self.delete_credentials)
         self.credentials_list.itemDoubleClicked.connect(self.double_click_credentials)
 
-    def load_saved_credentials(self):
-        self.credentials_list.clear()
+    def set_startup_credentials(self):
+        selected_item = self.startup_credential_options.currentText()
+
         config = configparser.ConfigParser()
         config.read('credentials.ini')
+
+        if 'Startup credentials' not in config:
+            config['Startup credentials'] = {}
+
+        config['Startup credentials']['startup_credentials'] = f"{selected_item}"
+
+        with open('credentials.ini', 'w') as config_file:
+            config.write(config_file)
+
+    def load_saved_credentials(self):
+        self.startup_credential_options.currentTextChanged.disconnect(self.set_startup_credentials)
+
+        self.credentials_list.clear()
+        self.startup_credential_options.clear()
+        self.startup_credential_options.addItem("None")
+
+        config = configparser.ConfigParser()
+        config.read('credentials.ini')
+
         if 'Credentials' in config:
             for key in config['Credentials']:
                 self.credentials_list.addItem(key)
+                self.startup_credential_options.addItem(key)
+
+        if 'Startup credentials' in config:
+            selected_startup_credentials = config['Startup credentials']['startup_credentials']
+            idx = self.startup_credential_options.findText(f"{selected_startup_credentials}")
+            self.startup_credential_options.setCurrentIndex(idx)
+
+        self.startup_credential_options.currentTextChanged.connect(self.set_startup_credentials)
 
     def add_credentials(self):
         dialog = AddCredentialsDialog(self)
@@ -460,9 +497,12 @@ class IPTVPlayerApp(QMainWindow):
         self.tab_widget.addTab(self.movies_tab, movies_icon, "Movies")
         self.tab_widget.addTab(self.series_tab, series_icon, "Series")
 
-        self.live_layout = QVBoxLayout(self.live_tab)
-        self.movies_layout = QVBoxLayout(self.movies_tab)
-        self.series_layout = QVBoxLayout(self.series_tab)
+        # self.live_layout = QVBoxLayout(self.live_tab)
+        # self.movies_layout = QVBoxLayout(self.movies_tab)
+        # self.series_layout = QVBoxLayout(self.series_tab)
+        self.live_layout = QGridLayout(self.live_tab)
+        self.movies_layout = QGridLayout(self.movies_tab)
+        self.series_layout = QGridLayout(self.series_tab)
 
         self.search_bar_live = QLineEdit()
         self.search_bar_live.setPlaceholderText("Search Live Channels...")
@@ -482,16 +522,22 @@ class IPTVPlayerApp(QMainWindow):
         self.add_search_icon(self.search_bar_series)
         self.search_bar_series.textChanged.connect(lambda text: self.search_in_list('Series', text))
 
-        self.add_search_bar(self.live_layout, self.search_bar_live)
-        self.add_search_bar(self.movies_layout, self.search_bar_movies)
-        self.add_search_bar(self.series_layout, self.search_bar_series)
+        self.live_layout.addWidget(self.search_bar_live, 0, 0, 1, 2)
+        self.movies_layout.addWidget(self.search_bar_movies, 0, 0, 1, 2)
+        self.series_layout.addWidget(self.search_bar_series, 0, 0, 1, 2)
+        # self.add_search_bar(self.live_layout, self.search_bar_live)
+        # self.add_search_bar(self.movies_layout, self.search_bar_movies)
+        # self.add_search_bar(self.series_layout, self.search_bar_series)
 
+        self.category_list_live = QListWidget()
         self.channel_list_live = QListWidget()
+        self.category_list_movies = QListWidget()
         self.channel_list_movies = QListWidget()
+        self.category_list_series = QListWidget()
         self.channel_list_series = QListWidget()
 
         standard_icon_size = QSize(24, 24)
-        for list_widget in [self.channel_list_live, self.channel_list_movies, self.channel_list_series]:
+        for list_widget in [self.channel_list_live, self.channel_list_movies, self.channel_list_series, self.category_list_live, self.category_list_movies, self.category_list_series]:
             list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             list_widget.setIconSize(standard_icon_size)
             list_widget.setStyleSheet("""
@@ -501,9 +547,13 @@ class IPTVPlayerApp(QMainWindow):
                 }
             """)
 
-        self.live_layout.addWidget(self.channel_list_live)
-        self.movies_layout.addWidget(self.channel_list_movies)
-        self.series_layout.addWidget(self.channel_list_series)
+        self.live_layout.addWidget(self.category_list_live, 1, 0)
+        self.live_layout.addWidget(self.channel_list_live, 1, 1)
+        # self.live_layout.addWidget(self.channel_list_live)
+        self.movies_layout.addWidget(self.category_list_movies, 1, 0)
+        self.movies_layout.addWidget(self.channel_list_movies, 1, 1)
+        self.series_layout.addWidget(self.category_list_series, 1, 0)
+        self.series_layout.addWidget(self.channel_list_series, 1, 1)
 
         self.list_widgets = {
             'LIVE': self.channel_list_live,
@@ -511,10 +561,19 @@ class IPTVPlayerApp(QMainWindow):
             'Series': self.channel_list_series,
         }
 
+        self.category_list_widgets = {
+            'LIVE': self.category_list_live,
+            'Movies': self.category_list_movies,
+            'Series': self.category_list_series,
+        }
+
         self.tab_widget.currentChanged.connect(self.on_tab_change)
         self.channel_list_live.itemDoubleClicked.connect(self.channel_item_double_clicked)
         self.channel_list_movies.itemDoubleClicked.connect(self.channel_item_double_clicked)
         self.channel_list_series.itemDoubleClicked.connect(self.channel_item_double_clicked)
+        self.category_list_live.itemClicked.connect(self.channel_item_clicked)
+        self.category_list_movies.itemClicked.connect(self.channel_item_clicked)
+        self.category_list_series.itemClicked.connect(self.channel_item_clicked)
 
         self.info_tab = QWidget()
         self.info_tab_layout = QVBoxLayout(self.info_tab)
@@ -540,6 +599,28 @@ class IPTVPlayerApp(QMainWindow):
         self.playlist_progress_animation = QPropertyAnimation(self.progress_bar, b"value")
         self.playlist_progress_animation.setDuration(1000)  # longer duration for smoother animation
         self.playlist_progress_animation.setEasingCurve(QEasingCurve.InOutQuad)
+
+        # Load playlist on startup if enabled
+        config = configparser.ConfigParser()
+        config.read('credentials.ini')
+
+        if 'Startup credentials' in config:
+            selected_startup_credentials = config['Startup credentials']['startup_credentials']
+
+            if 'Credentials' in config and selected_startup_credentials in config['Credentials']:
+                data = config['Credentials'][selected_startup_credentials]
+
+                if data.startswith('manual|'):
+                    _, server, username, password = data.split('|')
+                    self.server_entry.setText(server)
+                    self.username_entry.setText(username)
+                    self.password_entry.setText(password)
+                    self.login()
+
+                elif data.startswith('m3u_plus|'):
+                    _, m3u_url = data.split('|', 1)
+                    self.extract_credentials_from_m3u_plus_url(m3u_url)
+                    self.login()
 
     def add_search_icon(self, search_bar):
         search_icon = QIcon.fromTheme("edit-find")
@@ -628,6 +709,9 @@ class IPTVPlayerApp(QMainWindow):
         for tab_name, list_widget in self.list_widgets.items():
             list_widget.clear()
 
+        for tab_name, list_widget in self.category_list_widgets.items():
+            list_widget.clear()
+
         cache_file = 'epg_cache1.xml'
         if os.path.exists(cache_file):
             try:
@@ -677,6 +761,7 @@ class IPTVPlayerApp(QMainWindow):
                 "Movies": movies_response.json(),
                 "Series": series_response.json(),
             }
+                
             self.server = server
             self.username = username
             self.password = password
@@ -797,6 +882,29 @@ class IPTVPlayerApp(QMainWindow):
         print(f"Error fetching EPG data: {error_message}")
         self.animate_progress(self.progress_bar.value(), 100, "Error fetching EPG data")
 
+    def channel_item_clicked(self, item):
+        try:
+            sender = self.sender()
+            category = {
+                self.category_list_live: 'LIVE',
+                self.category_list_movies: 'Movies',
+                self.category_list_series: 'Series'
+            }.get(sender)
+
+            if not category:
+                return
+
+            selected_item = sender.currentItem()
+            if not selected_item:
+                return
+
+            selected_text = selected_item.text()
+
+            self.handle_xtream_click(selected_item, selected_text, category, sender)
+
+        except Exception as e:
+            print(f"Error occurred while handling double click: {e}")
+
     def channel_item_double_clicked(self, item):
         try:
             sender = self.sender()
@@ -837,7 +945,8 @@ class IPTVPlayerApp(QMainWindow):
             self.search_bar_series.clear()
 
         try:
-            list_widget = self.get_list_widget(tab_name)
+            # list_widget = self.get_list_widget(tab_name)
+            list_widget = self.get_category_list_widget(tab_name)
             list_widget.clear()
 
             if self.navigation_stacks[tab_name]:
@@ -866,11 +975,104 @@ class IPTVPlayerApp(QMainWindow):
             for item in items:
                 list_widget.addItem(item)
 
+            item = QListWidgetItem("All")
+            item.setIcon(channel_icon)
+            list_widget.insertItem(0, QListWidgetItem(item))
+
             scroll_position = self.top_level_scroll_positions.get(tab_name, 0)
             list_widget.verticalScrollBar().setValue(scroll_position)
         except Exception as e:
             print(f"Error updating category lists: {e}")
             self.animate_progress(self.progress_bar.value(), 100, "Error updating lists")
+
+    def fetch_all_channels(self, tab_name):
+        try:
+            list_widget = self.get_list_widget(tab_name)
+
+            current_scroll_position = list_widget.verticalScrollBar().value()
+            stack = self.navigation_stacks[tab_name]
+            if stack:
+                stack[-1]['scroll_position'] = current_scroll_position
+            else:
+                self.top_level_scroll_positions[tab_name] = current_scroll_position
+
+            http_method = self.get_http_method()
+            params = {
+                'username': self.username,
+                'password': self.password,
+                'action': '',
+                'category_id': 0
+            }
+
+            if tab_name == "LIVE":
+                params['action'] = 'get_live_streams'
+                stream_type = "live"
+            elif tab_name == "Movies":
+                params['action'] = 'get_vod_streams'
+                stream_type = "movie"
+
+            streams_url = f"{self.server}/player_api.php"
+
+            entries = []
+            num_groups = len(self.groups[tab_name])
+            count = 0
+
+            for g in self.groups[tab_name]:
+            # for i in range(3):
+            #     g = self.groups[tab_name][i]
+                params['category_id'] = g['category_id']
+                print(g['category_id'])
+
+                response = self.make_request(http_method, streams_url, params)
+                response.raise_for_status()
+
+                data = response.json()
+                if not isinstance(data, list):
+                    raise ValueError("Expected a list of channels")
+
+                # print(f"{data}\n\n")
+                for j in range(len(data)):
+                    self.entries_per_tab[tab_name].append(data[j])
+                # self.entries_per_tab[tab_name] = data
+                # self.entries_per_tab[tab_name][0].append(data)
+                entries = self.entries_per_tab[tab_name]
+                # entries.append(self.entries_per_tab[tab_name][-1])
+                # print(f"{entries}\n\n")
+
+                #Visuals do not update during this process
+                # count += 1
+                # self.animate_progress(self.progress_bar.value(), 50, f"Loaded {count} of {num_groups} channels")
+
+            # print("finsihed")
+            for entry in entries:
+                stream_id = entry.get("stream_id")
+                epg_channel_id = entry.get("epg_channel_id")
+                if epg_channel_id:
+                    epg_channel_id = epg_channel_id.strip().lower()
+                else:
+                    epg_channel_id = None
+
+                container_extension = entry.get("container_extension", "m3u8")
+                if stream_id:
+                    entry["url"] = f"{self.server}/{stream_type}/{self.username}/{self.password}/{stream_id}.{container_extension}"
+                else:
+                    entry["url"] = None
+                entry["epg_channel_id"] = epg_channel_id
+
+            # print(f"{entries}\n\n")
+            self.navigation_stacks[tab_name].append({'level': 'channels', 'data': {'tab_name': tab_name, 'entries': entries}, 'scroll_position': 0})
+                # self.navigation_stacks[tab_name][-1]['data'].append({})
+            self.show_channels(list_widget, tab_name)
+
+        except requests.RequestException as e:
+            print(f"Network error: {e}")
+            self.animate_progress(self.progress_bar.value(), 100, "Network Error")
+        except ValueError as e:
+            print(f"Data validation error: {e}")
+            self.animate_progress(self.progress_bar.value(), 100, "Invalid channel data received")
+        except Exception as e:
+            print(f"Error fetching channels: {e}")
+            self.animate_progress(self.progress_bar.value(), 100, "Error fetching channels")
 
     def fetch_channels(self, category_name, tab_name):
         try:
@@ -906,9 +1108,10 @@ class IPTVPlayerApp(QMainWindow):
             data = response.json()
             if not isinstance(data, list):
                 raise ValueError("Expected a list of channels")
-            self.entries_per_tab[tab_name] = data
 
+            self.entries_per_tab[tab_name] = data
             entries = self.entries_per_tab[tab_name]
+            print(entries)
 
             for entry in entries:
                 stream_id = entry.get("stream_id")
@@ -937,6 +1140,28 @@ class IPTVPlayerApp(QMainWindow):
         except Exception as e:
             print(f"Error fetching channels: {e}")
             self.animate_progress(self.progress_bar.value(), 100, "Error fetching channels")
+
+    def handle_xtream_click(self, selected_item, selected_text, tab_name, sender):
+        try:
+            list_widget = self.get_category_list_widget(tab_name)
+            
+            if tab_name != "Series":
+                if selected_text == "All":
+                    self.fetch_all_channels(tab_name)
+                elif selected_text in [group["category_name"] for group in self.groups[tab_name]]:
+                    self.fetch_channels(selected_text, tab_name)
+                else:
+                    selected_entry = selected_item.data(Qt.UserRole)
+                    if selected_entry and "url" in selected_entry:
+                        self.play_channel(selected_entry)
+                return
+            elif tab_name == "Series":
+                if selected_text in [group["category_name"] for group in self.groups["Series"]]:
+                    self.fetch_series_in_category(selected_text)
+                    return
+
+        except Exception as e:
+            print(f"Error loading channels: {e}")
 
     def handle_xtream_double_click(self, selected_item, selected_text, tab_name, sender):
         try:
@@ -981,20 +1206,24 @@ class IPTVPlayerApp(QMainWindow):
             # Series logic
             if tab_name == "Series":
                 if not stack:
+                    print("not stack")
                     if selected_text in [group["category_name"] for group in self.groups["Series"]]:
                         self.fetch_series_in_category(selected_text)
                         return
                 elif stack[-1]['level'] == 'series_categories':
+                    print("series category")
                     series_entry = selected_item.data(Qt.UserRole)
                     if series_entry and "series_id" in series_entry:
                         self.fetch_seasons(series_entry)
                         return
                 elif stack[-1]['level'] == 'series':
+                    print("series")
                     season_number = selected_item.data(Qt.UserRole)
                     series_entry = stack[-1]['data']['series_entry']
                     self.fetch_episodes(series_entry, season_number)
                     return
                 elif stack[-1]['level'] == 'season':
+                    print("seasons\n\n\n")
                     selected_entry = selected_item.data(Qt.UserRole)
                     if selected_entry and "url" in selected_entry:
                         self.play_channel(selected_entry)
@@ -1007,10 +1236,10 @@ class IPTVPlayerApp(QMainWindow):
         try:
             list_widget.clear()
 
-            if self.navigation_stacks[tab_name]:
-                go_back_item = QListWidgetItem("Go Back")
-                go_back_item.setIcon(self.go_back_icon)
-                list_widget.addItem(go_back_item)
+            # if self.navigation_stacks[tab_name]:
+            #     go_back_item = QListWidgetItem("Go Back")
+            #     go_back_item.setIcon(self.go_back_icon)
+            #     list_widget.addItem(go_back_item)
 
             if tab_name == 'LIVE':
                 channel_icon = self.live_channel_icon
@@ -1124,10 +1353,6 @@ class IPTVPlayerApp(QMainWindow):
             list_widget = self.channel_list_series
 
             list_widget.clear()
-            if self.navigation_stacks['Series']:
-                go_back_item = QListWidgetItem("Go Back")
-                go_back_item.setIcon(self.go_back_icon)
-                list_widget.addItem(go_back_item)
 
             items = []
             for entry in series_list:
@@ -1290,6 +1515,7 @@ class IPTVPlayerApp(QMainWindow):
     def play_channel(self, entry):
         try:
             stream_url = entry.get("url")
+            print(f"stream_url: {stream_url}")
             if not stream_url:
                 self.animate_progress(0, 100, "Stream URL not found")
                 return
@@ -1401,19 +1627,38 @@ class IPTVPlayerApp(QMainWindow):
 
     def search_in_list(self, tab_name, text):
         list_widget = self.get_list_widget(tab_name)
+        if list_widget.count() == 0:
+            self.show_channels(list_widget, tab_name)
+            print("list is empty")
+
         if not list_widget:
+            print("not list widget")
+            # for i in range(len(self.entries_per_tab[tab_name])):
+            #     print(self.entries_per_tab[tab_name][i])
+            #     print("\n\n")
             return
 
         list_widget.clear()
 
-        if self.navigation_stacks[tab_name]:
-            go_back_item = QListWidgetItem("Go Back")
-            go_back_item.setIcon(self.go_back_icon)
-            list_widget.addItem(go_back_item)
+        # for i in range(len(self.navigation_stacks[tab_name])):
+        #     print(self.navigation_stacks[tab_name][i])
+        #     print("\n\n")
+        # for i in range(len(self.entries_per_tab[tab_name])):
+        #     print(self.entries_per_tab[tab_name][i])
+        #     print("\n\n")
+        # if self.navigation_stacks[tab_name]:
+        #     go_back_item = QListWidgetItem("Go Back")
+        #     go_back_item.setIcon(self.go_back_icon)
+        #     list_widget.addItem(go_back_item)
 
         filtered_items = []
         if self.login_type == 'xtream':
             if tab_name != "Series":
+                print("not series")
+                print(tab_name)
+                # print(list(self.entries_per_tab['LIVE']))
+                # print(list(self.navigation_stacks['LIVE']))
+
                 for entry in self.entries_per_tab[tab_name]:
                     if text.lower() in entry['name'].lower():
                         item = QListWidgetItem(entry['name'])
@@ -1429,14 +1674,25 @@ class IPTVPlayerApp(QMainWindow):
                         item.setIcon(channel_icon)
                         filtered_items.append(item)
             else:
+                print("is series")
+                # print(self.navigation_stacks['Series'])
+                # print(self.navigation_stacks['Series'][-1]['data'])
                 stack = self.navigation_stacks['Series']
+
+                # try:
+                #     for i in range(len(self.navigation_stacks['Series'][-1]['data']['series_list'])):
+                #         print(self.navigation_stacks['Series'][-1]['data']['series_list'][i])
+                #         print("\n")
+                # except Exception as e:
+                #     print(f"failed: {e}")
+
                 if not stack or stack[-1]['level'] == 'series_categories':
-                    for group in self.groups["Series"]:
-                        if text.lower() in group["category_name"].lower():
-                            item = QListWidgetItem(group["category_name"])
-                            item.setIcon(self.series_channel_icon)
-                            filtered_items.append(item)
-                elif stack[-1]['level'] == 'series_categories':
+                    print("in series category")
+                    # for group in self.groups["Series"]:
+                    #     if text.lower() in group["category_name"].lower():
+                    #         item = QListWidgetItem(group["category_name"])
+                    #         item.setIcon(self.series_channel_icon)
+                    #         filtered_items.append(item)
                     for entry in self.current_series_list:
                         if text.lower() in entry['name'].lower():
                             item = QListWidgetItem(entry['name'])
@@ -1444,13 +1700,33 @@ class IPTVPlayerApp(QMainWindow):
                             item.setIcon(self.series_channel_icon)
                             filtered_items.append(item)
                 elif stack[-1]['level'] == 'series':
+                    print("in series list")
+                    # for entry in self.current_series_list:
+                    #     if text.lower() in entry['name'].lower():
+                    #         item = QListWidgetItem(entry['name'])
+                    #         item.setData(Qt.UserRole, entry)
+                    #         item.setIcon(self.series_channel_icon)
+                    #         filtered_items.append(item)
                     for season in self.current_seasons:
                         if text.lower() in f"Season {season}".lower():
                             item = QListWidgetItem(f"Season {season}")
                             item.setData(Qt.UserRole, season)
                             item.setIcon(self.series_channel_icon)
                             filtered_items.append(item)
+
+                    go_back_item = QListWidgetItem("Go Back")
+                    go_back_item.setIcon(self.go_back_icon)
+                    list_widget.addItem(go_back_item)
                 elif stack[-1]['level'] == 'season':
+                    print("in seasons")
+                    # for season in self.current_seasons:
+                    #     if text.lower() in f"Season {season}".lower():
+                    #         item = QListWidgetItem(f"Season {season}")
+                    #         item.setData(Qt.UserRole, season)
+                    #         item.setIcon(self.series_channel_icon)
+                    #         filtered_items.append(item)
+                # elif stack[-1]['level'] == 'episode':
+                #     print("in episodes")
                     for episode in self.current_episodes:
                         if text.lower() in episode['title'].lower():
                             episode_entry = {
@@ -1460,16 +1736,31 @@ class IPTVPlayerApp(QMainWindow):
                                 "url": f"{self.server}/series/{self.username}/{self.password}/{episode['id']}.{episode.get('container_extension', 'm3u8')}",
                                 "title": episode['title']
                             }
-                            item = QListWidgetItem(f"Episode {episode['episode_num']}: {episode['title']}")
+                            # item = QListWidgetItem(f"Episode {episode['episode_num']}: {episode['title']}")
+                            item = QListWidgetItem(f"{episode['title']}")
                             item.setData(Qt.UserRole, episode_entry)
                             item.setIcon(self.series_channel_icon)
                             filtered_items.append(item)
+                    go_back_item = QListWidgetItem("Go Back")
+                    go_back_item.setIcon(self.go_back_icon)
+                    list_widget.addItem(go_back_item)
+                else:
+                    print("was nothing")
 
+        if not filtered_items:
+            print("filtered items is empty")
+            list_widget.addItem(QListWidgetItem("No search results..."))
+            return
+
+        filtered_items.sort(key=lambda x: x.text())
         for item in filtered_items:
             list_widget.addItem(item)
 
     def get_list_widget(self, tab_name):
         return self.list_widgets.get(tab_name)
+
+    def get_category_list_widget(self, tab_name):
+        return self.category_list_widgets.get(tab_name)
 
     def load_external_player_command(self):
         config = configparser.ConfigParser()
