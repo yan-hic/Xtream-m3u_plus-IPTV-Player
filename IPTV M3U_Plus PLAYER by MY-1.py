@@ -11,7 +11,7 @@ from lxml import etree
 from datetime import datetime
 from dateutil import parser, tz
 import xml.etree.ElementTree as ET
-from PyQt5.QtGui import QIcon, QFont
+from PyQt5.QtGui import QIcon, QFont, QImage, QPixmap
 from PyQt5.QtCore import (
     Qt, QTimer, QPropertyAnimation, QEasingCurve, QSize, QObject, pyqtSignal, QRunnable, pyqtSlot, QThreadPool
 )
@@ -22,6 +22,8 @@ from PyQt5.QtWidgets import (
     QDialog, QFormLayout, QDialogButtonBox, QTabWidget, QListWidgetItem,
     QSpinBox, QMenu, QAction, QTextEdit, QGridLayout
 )
+
+import threading
 
 CUSTOM_USER_AGENT = (
     "Connection: Keep-Alive User-Agent: okhttp/5.0.0-alpha.2 "
@@ -756,6 +758,8 @@ class IPTVPlayerApp(QMainWindow):
             series_response = self.make_request(http_method, categories_url, params, timeout=10)
             series_response.raise_for_status()
 
+            # print(live_response.json())
+
             self.groups = {
                 "LIVE": live_response.json(),
                 "Movies": movies_response.json(),
@@ -903,7 +907,7 @@ class IPTVPlayerApp(QMainWindow):
             self.handle_xtream_click(selected_item, selected_text, category, sender)
 
         except Exception as e:
-            print(f"Error occurred while handling double click: {e}")
+            print(f"Error occurred while handling click: {e}")
 
     def channel_item_double_clicked(self, item):
         try:
@@ -997,11 +1001,17 @@ class IPTVPlayerApp(QMainWindow):
                 self.top_level_scroll_positions[tab_name] = current_scroll_position
 
             http_method = self.get_http_method()
+            # params = {
+            #     'username': self.username,
+            #     'password': self.password,
+            #     'action': '',
+            #     'category_id': 0
+            # }
+
             params = {
                 'username': self.username,
                 'password': self.password,
-                'action': '',
-                'category_id': 0
+                'action': ''
             }
 
             if tab_name == "LIVE":
@@ -1013,56 +1023,117 @@ class IPTVPlayerApp(QMainWindow):
 
             streams_url = f"{self.server}/player_api.php"
 
-            entries = []
-            num_groups = len(self.groups[tab_name])
-            count = 0
+            r = self.make_request(method=http_method, url=streams_url, params=params)
+            r.raise_for_status()
 
-            for g in self.groups[tab_name]:
-            # for i in range(3):
-            #     g = self.groups[tab_name][i]
-                params['category_id'] = g['category_id']
-                print(g['category_id'])
+            d = r.json()
 
-                response = self.make_request(http_method, streams_url, params)
-                response.raise_for_status()
+            list_widget.clear()
 
-                data = response.json()
-                if not isinstance(data, list):
-                    raise ValueError("Expected a list of channels")
+            for stream in d:
+                # epg_channel_id = entry.get("epg_channel_id")
+                # if epg_channel_id:
+                #     epg_channel_id = epg_channel_id.strip().lower()
+                # else:
+                #     epg_channel_id = None
 
-                # print(f"{data}\n\n")
-                for j in range(len(data)):
-                    self.entries_per_tab[tab_name].append(data[j])
-                # self.entries_per_tab[tab_name] = data
-                # self.entries_per_tab[tab_name][0].append(data)
-                entries = self.entries_per_tab[tab_name]
-                # entries.append(self.entries_per_tab[tab_name][-1])
-                # print(f"{entries}\n\n")
-
-                #Visuals do not update during this process
-                # count += 1
-                # self.animate_progress(self.progress_bar.value(), 50, f"Loaded {count} of {num_groups} channels")
-
-            # print("finsihed")
-            for entry in entries:
-                stream_id = entry.get("stream_id")
-                epg_channel_id = entry.get("epg_channel_id")
-                if epg_channel_id:
-                    epg_channel_id = epg_channel_id.strip().lower()
-                else:
-                    epg_channel_id = None
-
-                container_extension = entry.get("container_extension", "m3u8")
+                stream_type         = stream.get('stream_type')
+                stream_id           = stream.get("stream_id")
+                container_extension = stream.get("container_extension", "m3u8")
                 if stream_id:
-                    entry["url"] = f"{self.server}/{stream_type}/{self.username}/{self.password}/{stream_id}.{container_extension}"
+                    stream["url"] = f"{self.server}/{stream_type}/{self.username}/{self.password}/{stream_id}.{container_extension}"
                 else:
-                    entry["url"] = None
-                entry["epg_channel_id"] = epg_channel_id
+                    stream["url"] = None
 
-            # print(f"{entries}\n\n")
-            self.navigation_stacks[tab_name].append({'level': 'channels', 'data': {'tab_name': tab_name, 'entries': entries}, 'scroll_position': 0})
-                # self.navigation_stacks[tab_name][-1]['data'].append({})
-            self.show_channels(list_widget, tab_name)
+                item = QListWidgetItem(stream['name'])
+                item.setData(Qt.UserRole, stream)
+                # item.setIcon(channel_icon)
+
+                list_widget.addItem(item)
+
+            # list_widget.setSortingEnabled(True)
+
+
+            # for stream in d:
+            #     if (stream['name'].find("NL| NPO 1 HD") == 0):
+            #         print(stream)
+
+            #         # params['action'] = 'get_short_epg'
+            #         # params['stream_id'] = stream['stream_id']
+            #         # params['limit'] = 2
+
+            #         streams_url = f"{self.server}xmltv.php"
+            #         params = {
+            #             'username': self.username,
+            #             'password': self.password
+            #         }
+
+            #         # for x in range(5):
+            #         r = self.make_request(method=http_method, url=streams_url, params=params, timeout=60)
+            #         print(r.url)
+            #         r.raise_for_status()
+
+            #         epg_info = r.content
+            #         # print(epg_info)
+            #         with open("cache_file.xml", 'wb') as f:
+            #             f.write(epg_info)
+
+            #         print("got here")
+
+
+            # print(r.url)
+            # print(r.json())
+
+            # entries = []
+            # num_groups = len(self.groups[tab_name])
+            # count = 0
+
+            # for g in self.groups[tab_name]:
+            # # for i in range(3):
+            # #     g = self.groups[tab_name][i]
+            #     params['category_id'] = g['category_id']
+            #     print(g['category_id'])
+
+            #     response = self.make_request(http_method, streams_url, params)
+            #     response.raise_for_status()
+
+            #     data = response.json()
+            #     if not isinstance(data, list):
+            #         raise ValueError("Expected a list of channels")
+
+            #     # print(f"{data}\n\n")
+            #     for j in range(len(data)):
+            #         self.entries_per_tab[tab_name].append(data[j])
+            #     # self.entries_per_tab[tab_name] = data
+            #     # self.entries_per_tab[tab_name][0].append(data)
+            #     entries = self.entries_per_tab[tab_name]
+            #     # entries.append(self.entries_per_tab[tab_name][-1])
+            #     # print(f"{entries}\n\n")
+
+            #     #Visuals do not update during this process
+            #     # count += 1
+            #     # self.animate_progress(self.progress_bar.value(), 50, f"Loaded {count} of {num_groups} channels")
+
+            # # print("finsihed")
+            # for entry in entries:
+            #     stream_id = entry.get("stream_id")
+            #     epg_channel_id = entry.get("epg_channel_id")
+            #     if epg_channel_id:
+            #         epg_channel_id = epg_channel_id.strip().lower()
+            #     else:
+            #         epg_channel_id = None
+
+            #     container_extension = entry.get("container_extension", "m3u8")
+            #     if stream_id:
+            #         entry["url"] = f"{self.server}/{stream_type}/{self.username}/{self.password}/{stream_id}.{container_extension}"
+            #     else:
+            #         entry["url"] = None
+            #     entry["epg_channel_id"] = epg_channel_id
+
+            # # print(f"{entries}\n\n")
+            # self.navigation_stacks[tab_name].append({'level': 'channels', 'data': {'tab_name': tab_name, 'entries': entries}, 'scroll_position': 0})
+            #     # self.navigation_stacks[tab_name][-1]['data'].append({})
+            # self.show_channels(list_widget, tab_name)
 
         except requests.RequestException as e:
             print(f"Network error: {e}")
@@ -1111,7 +1182,7 @@ class IPTVPlayerApp(QMainWindow):
 
             self.entries_per_tab[tab_name] = data
             entries = self.entries_per_tab[tab_name]
-            print(entries)
+            # print(entries)
 
             for entry in entries:
                 stream_id = entry.get("stream_id")
@@ -1199,6 +1270,7 @@ class IPTVPlayerApp(QMainWindow):
                     self.fetch_channels(selected_text, tab_name)
                 else:
                     selected_entry = selected_item.data(Qt.UserRole)
+                    print(selected_entry)
                     if selected_entry and "url" in selected_entry:
                         self.play_channel(selected_entry)
                 return
@@ -1256,6 +1328,20 @@ class IPTVPlayerApp(QMainWindow):
             for idx, entry in enumerate(self.entries_per_tab[tab_name]):
                 display_text = entry.get("name", "Unnamed Channel")
                 tooltip_text = ""
+
+                # try:
+                #     icon_url = entry.get('stream_icon')
+
+                #     headers = {'User-Agent': CUSTOM_USER_AGENT}
+
+                #     image = QImage()
+                #     image.loadFromData(requests.get(icon_url, headers=headers).content)
+
+                #     channel_icon = QIcon(QPixmap(image))
+
+                # except Exception as e:
+                #     print(f"failed to do icon: {e}")
+
 
                 if tab_name == "LIVE" and self.epg_data:
                     epg_channel_id = entry.get('epg_channel_id')
