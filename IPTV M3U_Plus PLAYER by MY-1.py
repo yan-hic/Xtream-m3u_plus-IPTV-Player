@@ -1,5 +1,6 @@
 import sys
 import os
+from os import path
 import time
 import requests
 import subprocess
@@ -7,7 +8,7 @@ import configparser
 import re
 import json
 import html
-from lxml import etree
+from lxml import etree, html
 from datetime import datetime
 from dateutil import parser, tz
 import xml.etree.ElementTree as ET
@@ -81,10 +82,22 @@ class FetchDataWorker(QRunnable):
             self.signals.progress_bar.emit(0, 5, "Fetching IPTV info")
             try:
                 iptv_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                iptv_info_resp.raise_for_status()
+                # iptv_info_resp.raise_for_status()
                 iptv_info_data = iptv_info_resp.json()
             except Exception as e:
                 print(f"failed fetching IPTV data: {e}")
+
+            #Load cached data
+            print("Loading cached data")
+            cached_data = {}
+
+            cache_path = path.join(path.dirname(path.abspath(__file__)), "all_cached_data.json")
+            print(cache_path)
+            #Check if cache file exists
+            if path.isfile(cache_path):
+                print("cache file is there")
+                with open("all_cached_data.json", 'r') as cache_file:
+                    cached_data = json.load(cache_file)
 
             #Get all category data
             print("Fetching categories")
@@ -92,31 +105,43 @@ class FetchDataWorker(QRunnable):
             try:
                 params['action'] = 'get_live_categories'
                 live_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                print(live_category_resp.raise_for_status())
+                # print(live_category_resp.raise_for_status())
 
                 categories_per_stream_type['LIVE'] = live_category_resp.json()
             except Exception as e:
                 print(f"failed fetching LIVE categories: {e}")
 
+                if cached_data.get('LIVE categories', 0):
+                    print("Getting LIVE categories from cache")
+                    categories_per_stream_type['LIVE'] = cached_data['LIVE categories']
+
             self.signals.progress_bar.emit(10, 20, "Fetching VOD Categories")
             try:
                 params['action'] = 'get_vod_categories'
                 movies_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                print(movies_category_resp.raise_for_status())
+                # print(movies_category_resp.raise_for_status())
 
                 categories_per_stream_type['Movies'] = movies_category_resp.json()
             except Exception as e:
                 print(f"failed fetching VOD categories: {e}")
 
+                if cached_data.get('Movies categories', 0):
+                    print("Getting Movies categories from cache")
+                    categories_per_stream_type['Movies'] = cached_data['Movies categories']
+
             self.signals.progress_bar.emit(20, 30, "Fetching Series Categories")
             try:
                 params['action'] = 'get_series_categories'
                 series_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                print(series_category_resp.raise_for_status())
+                # print(series_category_resp.raise_for_status())
 
                 categories_per_stream_type['Series'] = series_category_resp.json()
             except Exception as e:
                 print(f"failed fetching Series categories: {e}")
+
+                if cached_data.get('Series categories', 0):
+                    print("Getting Series categories from cache")
+                    categories_per_stream_type['Series'] = cached_data['Series categories']
 
             print("Fetching streaming data")
             #Get all streaming data
@@ -124,45 +149,56 @@ class FetchDataWorker(QRunnable):
             try:
                 params['action'] = 'get_live_streams'
                 live_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                print(live_streams_resp.raise_for_status())
+                # print(live_streams_resp.raise_for_status())
 
                 entries_per_stream_type['LIVE'] = live_streams_resp.json()
             except Exception as e:
                 print(f"failed fetching LIVE streams: {e}")
 
+                if cached_data.get('LIVE', 0):
+                    print("Getting LIVE streams from cache")
+                    entries_per_stream_type['LIVE'] = cached_data['LIVE']
+
             self.signals.progress_bar.emit(40, 60, "Fetching VOD Streaming data")
             try:
                 params['action'] = 'get_vod_streams'
                 movies_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                print(movies_streams_resp.raise_for_status())
+                # print(movies_streams_resp.raise_for_status())
 
                 entries_per_stream_type['Movies'] = movies_streams_resp.json()
             except Exception as e:
                 print(f"failed fetching VOD streams: {e}")
 
+                if cached_data.get('Movies', 0):
+                    print("Getting Movies streams from cache")
+                    entries_per_stream_type['Movies'] = cached_data['Movies']
+
             self.signals.progress_bar.emit(60, 80, "Fetching Series Streaming data")
             try:
                 params['action'] = 'get_series'
                 series_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                print(series_streams_resp.raise_for_status())
+                # print(series_streams_resp.raise_for_status())
 
                 entries_per_stream_type['Series'] = series_streams_resp.json()
             except Exception as e:
                 print(f"failed fetching Series streams: {e}")
 
+                if cached_data.get('Series', 0):
+                    print("Getting Series streams from cache")
+                    entries_per_stream_type['Series'] = cached_data['Series']
 
-            # all_cached_data = json.dumps({
-            #         'LIVE categories': categories_per_stream_type['LIVE'],
-            #         'Movies categories': categories_per_stream_type['Movies'],
-            #         'Series categories': categories_per_stream_type['Series'],
-            #         'LIVE': entries_per_stream_type['LIVE'],
-            #         'Movies': entries_per_stream_type['Movies'],
-            #         'Series': entries_per_stream_type['Series']
-            #     }, 
-            #     indent=4)
+            all_cached_data = json.dumps({
+                    'LIVE categories': categories_per_stream_type['LIVE'],
+                    'Movies categories': categories_per_stream_type['Movies'],
+                    'Series categories': categories_per_stream_type['Series'],
+                    'LIVE': entries_per_stream_type['LIVE'],
+                    'Movies': entries_per_stream_type['Movies'],
+                    'Series': entries_per_stream_type['Series']
+                }, 
+                indent=4)
 
-            # with open("all_cached_data.json", 'w') as cache_file:
-            #     cache_file.write(all_cached_data)
+            with open("all_cached_data.json", 'w') as cache_file:
+                cache_file.write(all_cached_data)
 
             #TODO Fetch EPG data
 
