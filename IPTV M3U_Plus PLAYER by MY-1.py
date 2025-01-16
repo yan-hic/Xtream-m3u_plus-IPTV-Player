@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QLineEdit, QLabel, QPushButton,
     QListWidget, QWidget, QFileDialog, QCheckBox, QSizePolicy, QHBoxLayout,
     QDialog, QFormLayout, QDialogButtonBox, QTabWidget, QListWidgetItem,
-    QSpinBox, QMenu, QAction, QTextEdit, QGridLayout, QMessageBox
+    QSpinBox, QMenu, QAction, QTextEdit, QGridLayout, QMessageBox, QListView
 )
 
 import threading
@@ -92,113 +92,120 @@ class FetchDataWorker(QRunnable):
             cached_data = {}
 
             cache_path = path.join(path.dirname(path.abspath(__file__)), "all_cached_data.json")
-            print(cache_path)
             #Check if cache file exists
             if path.isfile(cache_path):
                 print("cache file is there")
                 with open("all_cached_data.json", 'r') as cache_file:
                     cached_data = json.load(cache_file)
 
-            #Get all category data
-            print("Fetching categories")
-            self.signals.progress_bar.emit(5, 10, "Fetching LIVE Categories")
-            try:
-                params['action'] = 'get_live_categories'
-                live_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                # print(live_category_resp.raise_for_status())
+            categories_per_stream_type['LIVE'] = cached_data['LIVE categories']
+            categories_per_stream_type['Movies'] = cached_data['Movies categories']
+            categories_per_stream_type['Series'] = cached_data['Series categories']
+            entries_per_stream_type['LIVE'] = cached_data['LIVE']
+            entries_per_stream_type['Movies'] = cached_data['Movies']
+            entries_per_stream_type['Series'] = cached_data['Series']
 
-                categories_per_stream_type['LIVE'] = live_category_resp.json()
-            except Exception as e:
-                print(f"failed fetching LIVE categories: {e}")
+            #Uncomment this
+            # #Get all category data
+            # print("Fetching categories")
+            # self.signals.progress_bar.emit(5, 10, "Fetching LIVE Categories")
+            # try:
+            #     params['action'] = 'get_live_categories'
+            #     live_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+            #     # print(live_category_resp.raise_for_status())
 
-                if cached_data.get('LIVE categories', 0):
-                    print("Getting LIVE categories from cache")
-                    categories_per_stream_type['LIVE'] = cached_data['LIVE categories']
+            #     categories_per_stream_type['LIVE'] = live_category_resp.json()
+            # except Exception as e:
+            #     print(f"failed fetching LIVE categories: {e}")
 
-            self.signals.progress_bar.emit(10, 20, "Fetching VOD Categories")
-            try:
-                params['action'] = 'get_vod_categories'
-                movies_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                # print(movies_category_resp.raise_for_status())
+            #     if cached_data.get('LIVE categories', 0):
+            #         print("Getting LIVE categories from cache")
+            #         categories_per_stream_type['LIVE'] = cached_data['LIVE categories']
 
-                categories_per_stream_type['Movies'] = movies_category_resp.json()
-            except Exception as e:
-                print(f"failed fetching VOD categories: {e}")
+            # self.signals.progress_bar.emit(10, 20, "Fetching VOD Categories")
+            # try:
+            #     params['action'] = 'get_vod_categories'
+            #     movies_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+            #     # print(movies_category_resp.raise_for_status())
 
-                if cached_data.get('Movies categories', 0):
-                    print("Getting Movies categories from cache")
-                    categories_per_stream_type['Movies'] = cached_data['Movies categories']
+            #     categories_per_stream_type['Movies'] = movies_category_resp.json()
+            # except Exception as e:
+            #     print(f"failed fetching VOD categories: {e}")
 
-            self.signals.progress_bar.emit(20, 30, "Fetching Series Categories")
-            try:
-                params['action'] = 'get_series_categories'
-                series_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                # print(series_category_resp.raise_for_status())
+            #     if cached_data.get('Movies categories', 0):
+            #         print("Getting Movies categories from cache")
+            #         categories_per_stream_type['Movies'] = cached_data['Movies categories']
 
-                categories_per_stream_type['Series'] = series_category_resp.json()
-            except Exception as e:
-                print(f"failed fetching Series categories: {e}")
+            # self.signals.progress_bar.emit(20, 30, "Fetching Series Categories")
+            # try:
+            #     params['action'] = 'get_series_categories'
+            #     series_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+            #     # print(series_category_resp.raise_for_status())
 
-                if cached_data.get('Series categories', 0):
-                    print("Getting Series categories from cache")
-                    categories_per_stream_type['Series'] = cached_data['Series categories']
+            #     categories_per_stream_type['Series'] = series_category_resp.json()
+            # except Exception as e:
+            #     print(f"failed fetching Series categories: {e}")
 
-            print("Fetching streaming data")
-            #Get all streaming data
-            self.signals.progress_bar.emit(30, 40, "Fetching LIVE Streaming data")
-            try:
-                params['action'] = 'get_live_streams'
-                live_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                # print(live_streams_resp.raise_for_status())
+            #     if cached_data.get('Series categories', 0):
+            #         print("Getting Series categories from cache")
+            #         categories_per_stream_type['Series'] = cached_data['Series categories']
 
-                entries_per_stream_type['LIVE'] = live_streams_resp.json()
-            except Exception as e:
-                print(f"failed fetching LIVE streams: {e}")
+            # print("Fetching streaming data")
+            # #Get all streaming data
+            # self.signals.progress_bar.emit(30, 40, "Fetching LIVE Streaming data")
+            # try:
+            #     params['action'] = 'get_live_streams'
+            #     live_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+            #     # print(live_streams_resp.raise_for_status())
 
-                if cached_data.get('LIVE', 0):
-                    print("Getting LIVE streams from cache")
-                    entries_per_stream_type['LIVE'] = cached_data['LIVE']
+            #     entries_per_stream_type['LIVE'] = live_streams_resp.json()
+            # except Exception as e:
+            #     print(f"failed fetching LIVE streams: {e}")
 
-            self.signals.progress_bar.emit(40, 60, "Fetching VOD Streaming data")
-            try:
-                params['action'] = 'get_vod_streams'
-                movies_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                # print(movies_streams_resp.raise_for_status())
+            #     if cached_data.get('LIVE', 0):
+            #         print("Getting LIVE streams from cache")
+            #         entries_per_stream_type['LIVE'] = cached_data['LIVE']
 
-                entries_per_stream_type['Movies'] = movies_streams_resp.json()
-            except Exception as e:
-                print(f"failed fetching VOD streams: {e}")
+            # self.signals.progress_bar.emit(40, 60, "Fetching VOD Streaming data")
+            # try:
+            #     params['action'] = 'get_vod_streams'
+            #     movies_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+            #     # print(movies_streams_resp.raise_for_status())
 
-                if cached_data.get('Movies', 0):
-                    print("Getting Movies streams from cache")
-                    entries_per_stream_type['Movies'] = cached_data['Movies']
+            #     entries_per_stream_type['Movies'] = movies_streams_resp.json()
+            # except Exception as e:
+            #     print(f"failed fetching VOD streams: {e}")
 
-            self.signals.progress_bar.emit(60, 80, "Fetching Series Streaming data")
-            try:
-                params['action'] = 'get_series'
-                series_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                # print(series_streams_resp.raise_for_status())
+            #     if cached_data.get('Movies', 0):
+            #         print("Getting Movies streams from cache")
+            #         entries_per_stream_type['Movies'] = cached_data['Movies']
 
-                entries_per_stream_type['Series'] = series_streams_resp.json()
-            except Exception as e:
-                print(f"failed fetching Series streams: {e}")
+            # self.signals.progress_bar.emit(60, 80, "Fetching Series Streaming data")
+            # try:
+            #     params['action'] = 'get_series'
+            #     series_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+            #     # print(series_streams_resp.raise_for_status())
 
-                if cached_data.get('Series', 0):
-                    print("Getting Series streams from cache")
-                    entries_per_stream_type['Series'] = cached_data['Series']
+            #     entries_per_stream_type['Series'] = series_streams_resp.json()
+            # except Exception as e:
+            #     print(f"failed fetching Series streams: {e}")
 
-            all_cached_data = json.dumps({
-                    'LIVE categories': categories_per_stream_type['LIVE'],
-                    'Movies categories': categories_per_stream_type['Movies'],
-                    'Series categories': categories_per_stream_type['Series'],
-                    'LIVE': entries_per_stream_type['LIVE'],
-                    'Movies': entries_per_stream_type['Movies'],
-                    'Series': entries_per_stream_type['Series']
-                }, 
-                indent=4)
+            #     if cached_data.get('Series', 0):
+            #         print("Getting Series streams from cache")
+            #         entries_per_stream_type['Series'] = cached_data['Series']
 
-            with open("all_cached_data.json", 'w') as cache_file:
-                cache_file.write(all_cached_data)
+            # all_cached_data = json.dumps({
+            #         'LIVE categories': categories_per_stream_type['LIVE'],
+            #         'Movies categories': categories_per_stream_type['Movies'],
+            #         'Series categories': categories_per_stream_type['Series'],
+            #         'LIVE': entries_per_stream_type['LIVE'],
+            #         'Movies': entries_per_stream_type['Movies'],
+            #         'Series': entries_per_stream_type['Series']
+            #     }, 
+            #     indent=4)
+
+            # with open("all_cached_data.json", 'w') as cache_file:
+            #     cache_file.write(all_cached_data)
 
             #TODO Fetch EPG data
 
@@ -220,6 +227,15 @@ class FetchDataWorker(QRunnable):
                     if stream_type == 'series':
                         entries_per_stream_type[tab_name][idx]["stream_type"] = stream_type
 
+            # for entry in entries_per_stream_type['Movies']:
+            #     if (entry['name'].find("Sonic") >= 0):
+            #         print(f"Movie name: {entry['name']}")
+
+            #         cat_id = entry['category_id']
+            #         for category in categories_per_stream_type['Movies']:
+            #             if category['category_id'] == cat_id:
+            #                 print(f"Category name: {category['category_name']}")
+
             self.signals.finished.emit(iptv_info_data, categories_per_stream_type, entries_per_stream_type)
 
             print("finished")
@@ -227,6 +243,41 @@ class FetchDataWorker(QRunnable):
         except Exception as e:
             print(f"Exception! {e}")
             self.signals.error.emit(str(e))
+
+class SearchWorkerSignals(QObject):
+    list_widget = pyqtSignal(list, str)
+    error = pyqtSignal(str)
+
+class SearchWorker(QRunnable):
+    def __init__(self, stream_type, currently_loaded_entries, list_widgets, text):
+        super().__init__()
+        self.stream_type = stream_type
+        self.currently_loaded_entries = currently_loaded_entries[0]
+        self.list_widgets = list_widgets[0]
+        self.text = text
+
+        self.signals = SearchWorkerSignals()
+
+        # self.setAutoDelete(True)
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            self.list_widgets[self.stream_type].clear()
+            print("starting searching through entries")
+
+            for entry in self.currently_loaded_entries[self.stream_type]:
+                if self.text.lower() in entry['name'].lower():
+                    item = QListWidgetItem(entry['name'])
+                    item.setData(Qt.UserRole, entry)
+
+                    self.list_widgets[self.stream_type].addItem(item)
+
+                    print(entry['name'])
+
+            self.signals.list_widget.emit([self.list_widgets[self.stream_type]], self.stream_type)
+        except Exception as e:
+            print(f"failed search worker: {e}")
 
 class EPGWorkerSignals(QObject):
     finished = pyqtSignal(dict, dict)
@@ -543,6 +594,10 @@ class IPTVPlayerApp(QMainWindow):
         self.series_navigation_level = 0
         self.series_info_data = {}
 
+        self.search_history_list = []
+        self.search_history_list_idx = 0
+        self.max_search_history_size = 30
+
         self.categories_per_stream_type = {}
         self.entries_per_stream_type = {
             'LIVE': [],
@@ -580,7 +635,7 @@ class IPTVPlayerApp(QMainWindow):
         self.channel_id_to_names = {}  
         self.epg_last_updated = None  
         self.threadpool = QThreadPool()
-        self.threadpool.setMaxThreadCount(10)
+        self.threadpool.setMaxThreadCount(1)
         self.epg_id_mapping = {}
         self.epg_name_map = {}
 
@@ -632,19 +687,22 @@ class IPTVPlayerApp(QMainWindow):
         self.search_bar_live.setPlaceholderText("Search Live Channels...")
         self.search_bar_live.setClearButtonEnabled(True)
         self.add_search_icon(self.search_bar_live)
-        self.search_bar_live.textChanged.connect(lambda text: self.search_in_list('LIVE', text))
+        self.search_bar_live.keyPressEvent = lambda e: self.KeyPressed(e, self.search_bar_live, 'LIVE')
+
 
         self.search_bar_movies = QLineEdit()
         self.search_bar_movies.setPlaceholderText("Search Movies...")
         self.search_bar_movies.setClearButtonEnabled(True)
         self.add_search_icon(self.search_bar_movies)
-        self.search_bar_movies.textChanged.connect(lambda text: self.search_in_list('Movies', text))
+        # self.search_bar_movies.textChanged.connect(lambda text: self.search_in_list('Movies', text))
+        self.search_bar_movies.keyPressEvent = lambda e: self.KeyPressed(e, self.search_bar_movies, 'Movies')
 
         self.search_bar_series = QLineEdit()
         self.search_bar_series.setPlaceholderText("Search Series...")
         self.search_bar_series.setClearButtonEnabled(True)
         self.add_search_icon(self.search_bar_series)
-        self.search_bar_series.textChanged.connect(lambda text: self.search_in_list('Series', text))
+        # self.search_bar_series.textChanged.connect(lambda text: self.search_in_list('Series', text))
+        self.search_bar_series.keyPressEvent = lambda e: self.KeyPressed(e, self.search_bar_series, 'Series')
 
         self.result_display = QTextEdit(self.info_tab)
         self.result_display.setReadOnly(True)
@@ -663,6 +721,14 @@ class IPTVPlayerApp(QMainWindow):
         self.channel_list_live.setSortingEnabled(True)
         self.channel_list_movies.setSortingEnabled(True)
         self.channel_list_series.setSortingEnabled(True)
+
+        self.channel_list_live.setLayoutMode(QListView.Batched)
+        self.channel_list_movies.setLayoutMode(QListView.Batched)
+        self.channel_list_series.setLayoutMode(QListView.Batched)
+
+        self.channel_list_live.setBatchSize(2000)
+        self.channel_list_movies.setBatchSize(2000)
+        self.channel_list_series.setBatchSize(2000)
 
         self.list_widgets = {
             'LIVE': self.channel_list_live,
@@ -1114,101 +1180,6 @@ class IPTVPlayerApp(QMainWindow):
     def on_fetch_data_error(self, error_msg):
         print(f"Error occurred while fetching data: {error_msg}")
 
-    # def fetch_all_data(self, server, username, password):
-        # try:
-        #     self.login_type = 'xtream'
-        #     self.navigation_stacks = {'LIVE': [], 'Movies': [], 'Series': []}
-        #     self.top_level_scroll_positions = {'LIVE': 0, 'Movies': 0, 'Series': 0}
-
-
-        #     http_method = self.get_http_method()
-
-        #     params = {
-        #         'username': username,
-        #         'password': password,
-        #         'action': ''
-        #     }
-
-        #     host_url = f"{server}/player_api.php"
-
-        #     print("Going to receive data")
-
-        #     #Get IPTV info
-        #     self.set_progress_bar(5, "Loading IPTV info")
-        #     iptv_info = self.make_request(http_method, host_url, params, timeout=10)
-        #     iptv_info.raise_for_status()
-
-        #     #Get all category data
-        #     self.set_progress_bar(10, "Loading LIVE Categories")
-        #     params['action'] = 'get_live_categories'
-        #     live_category_resp = self.make_request(http_method, host_url, params, timeout=10)
-        #     live_category_resp.raise_for_status()
-
-        #     self.set_progress_bar(20, "Loading VOD Categories")
-        #     params['action'] = 'get_vod_categories'
-        #     movies_category_resp = self.make_request(http_method, host_url, params, timeout=10)
-        #     movies_category_resp.raise_for_status()
-
-        #     self.set_progress_bar(30, "Loading Series Categories")
-        #     params['action'] = 'get_series_categories'
-        #     series_category_resp = self.make_request(http_method, host_url, params, timeout=10)
-        #     series_category_resp.raise_for_status()
-
-        #     self.categories_per_stream_type = {
-        #         "LIVE": live_category_resp.json(),
-        #         "Movies": movies_category_resp.json(),
-        #         "Series": series_category_resp.json(),
-        #     }
-
-        #     #Get all streaming data
-        #     self.set_progress_bar(40, "Loading LIVE TV Streaming data")
-        #     params['action'] = 'get_live_streams'
-        #     live_streams_resp = self.make_request(http_method, host_url, params, timeout=10)
-        #     live_streams_resp.raise_for_status()
-
-        #     self.set_progress_bar(60, "Loading VOD Streaming data")
-        #     params['action'] = 'get_vod_streams'
-        #     movies_streams_resp = self.make_request(http_method, host_url, params, timeout=10)
-        #     movies_streams_resp.raise_for_status()
-
-        #     self.set_progress_bar(80, "Loading Series Streaming data")
-        #     params['action'] = 'get_series'
-        #     series_streams_resp = self.make_request(http_method, host_url, params, timeout=10)
-        #     series_streams_resp.raise_for_status()
-
-        #     self.entries_per_stream_type['LIVE']    = live_streams_resp.json()
-        #     self.entries_per_stream_type['Movies']  = movies_streams_resp.json()
-        #     self.entries_per_stream_type['Series']  = series_streams_resp.json()
-
-        #     #TODO Fetch EPG data
-
-        #     self.set_progress_bar(100, "Finished loading data")
-
-        #     #Make streaming URL in each entry except for the series
-        #     for tab_name in self.entries_per_stream_type.keys():
-        #         for idx, entry in enumerate(self.entries_per_stream_type[tab_name]):
-        #             stream_type         = entry.get('stream_type')
-        #             stream_id           = entry.get("stream_id")
-        #             container_extension = entry.get("container_extension", "m3u8")
-        #             if stream_id:
-        #                 self.entries_per_stream_type[tab_name][idx]["url"] = f"{self.server}/{stream_type}/{self.username}/{self.password}/{stream_id}.{container_extension}"
-
-        #     list_widget = self.get_list_widget('LIVE')
-        #     list_widget.clear()
-
-        #     for entry in self.entries_per_stream_type['LIVE']:
-        #         if entry['category_id'] == '1525':
-        #             item = QListWidgetItem(entry['name'])
-        #             item.setData(Qt.UserRole, entry)
-        #             # item.setIcon(channel_icon)
-
-        #             list_widget.addItem(item)
-
-        #     print("Finished processing data")
-
-        # except Exception as e:
-        #     print(f"Failed: {e}")
-
     def fetch_vod_info(self, vod_id):
         return
 
@@ -1418,131 +1389,6 @@ class IPTVPlayerApp(QMainWindow):
         else:
             self.animate_progress(0, 100, "No external player configured")
 
-
-    def fetch_categories_only(self, server, username, password):
-        try:
-            http_method = self.get_http_method()
-
-            params = {
-                'username': username,
-                'password': password,
-                'action': 'get_live_categories'
-            }
-
-            categories_url = f"{server}/player_api.php"
-            live_response = self.make_request(http_method, categories_url, params, timeout=10)
-            live_response.raise_for_status()
-
-            params['action'] = 'get_vod_categories'
-            movies_response = self.make_request(http_method, categories_url, params, timeout=10)
-            movies_response.raise_for_status()
-
-            params['action'] = 'get_series_categories'
-            series_response = self.make_request(http_method, categories_url, params, timeout=10)
-            series_response.raise_for_status()
-
-            # print(live_response.json())
-
-            self.categories_per_stream_type = {
-                "LIVE": live_response.json(),
-                "Movies": movies_response.json(),
-                "Series": series_response.json(),
-            }
-                
-            self.server = server
-            self.username = username
-            self.password = password
-            self.login_type = 'xtream'
-            self.navigation_stacks = {'LIVE': [], 'Movies': [], 'Series': []}
-            self.top_level_scroll_positions = {'LIVE': 0, 'Movies': 0, 'Series': 0}
-            self.update_category_lists('LIVE')
-            self.update_category_lists('Movies')
-            self.update_category_lists('Series')
-            self.fetch_additional_data(server, username, password)
-
-            # Playlist loading complete
-            # self.animate_progress(self.progress_bar.value(), 100, "Playlist loaded")
-            self.set_progress_bar(100, "Playlist Loaded")
-
-            # After playlist is fully loaded, if EPG is checked and not loaded, load EPG now
-            if self.epg_checkbox.isChecked() and not self.epg_data:
-                # Reset to 0 before loading EPG
-                self.reset_progress_bar()
-                # self.animate_progress(0, 50, "Loading EPG data...")
-                self.set_progress_bar(50, "Loading EPG data...")
-                self.load_epg_data_async()
-
-        except requests.exceptions.Timeout:
-            print("Request timed out")
-            self.animate_progress(self.progress_bar.value(), 100, "Login timed out")
-        except requests.RequestException as e:
-            print(f"Network error: {e}")
-            self.animate_progress(self.progress_bar.value(), 100, "Network Error")
-        except ValueError as e:
-            print(f"JSON decode error: {e}")
-            self.animate_progress(self.progress_bar.value(), 100, "Invalid server response")
-        except Exception as e:
-            print(f"Error fetching categories: {e}")
-            # self.animate_progress(self.progress_bar.value(), 100, "Error fetching categories")
-
-    def fetch_additional_data(self, server, username, password):
-        try:
-            if not server.startswith("http://") and not server.startswith("https://"):
-                server = f"http://{server}"
-
-            headers = {'User-Agent': CUSTOM_USER_AGENT}
-            payload = {'username': username, 'password': password}
-            url = f"{server}/player_api.php"
-
-            response = requests.post(url, headers=headers, data=payload, timeout=10)
-            response.raise_for_status()
-
-            additional_data = response.json()
-            user_info = additional_data.get("user_info", {})
-            server_info = additional_data.get("server_info", {})
-
-            hostname = server_info.get("url", server.replace("http://", "").replace("https://", ""))
-            port = server_info.get("port", 25461)
-            host = f"http://{hostname}:{port}"
-
-            username = user_info.get("username", "Unknown")
-            password = user_info.get("password", "Unknown")
-            max_connections = user_info.get("max_connections", "Unlimited")
-            active_connections = user_info.get("active_cons", "0")
-            trial = "Yes" if user_info.get("is_trial") == "1" else "No"
-            expire_timestamp = user_info.get("exp_date")
-            expiry = (
-                datetime.fromtimestamp(int(expire_timestamp)).strftime("%B %d, %Y")
-                if expire_timestamp else "Unlimited"
-            )
-            status = user_info.get("status", "Unknown")
-
-            created_at_timestamp = user_info.get("created_at", "Unknown")
-            created_at = (
-                datetime.fromtimestamp(int(created_at_timestamp)).strftime("%B %d, %Y")
-                if created_at_timestamp and created_at_timestamp.isdigit() else "Unknown"
-            )
-            timezone = server_info.get("timezone", "Unknown")
-
-            formatted_data = (
-                f"Host: {host}\n"
-                f"Username: {username}\n"
-                f"Password: {password}\n"
-                f"Max Connections: {max_connections}\n"
-                f"Active Connections: {active_connections}\n"
-                f"Timezone: {timezone}\n"
-                f"Trial: {trial}\n"
-                f"Status: {status}\n"
-                f"Created At: {created_at}\n"
-                f"Expiry: {expiry}\n"
-            )
-
-            self.result_display.setText(formatted_data)
-            self.info_tab_initialized = True
-
-        except Exception as e:
-            print(f"Error fetching additional data: {e}")
-
     def load_epg_data_async(self):
         if not self.server or not self.username or not self.password:
             # Can't load EPG if not logged in
@@ -1573,630 +1419,6 @@ class IPTVPlayerApp(QMainWindow):
         print(f"Error fetching EPG data: {error_message}")
         self.animate_progress(self.progress_bar.value(), 100, "Error fetching EPG data")
 
-    # def channel_item_clicked(self, item):
-    #     try:
-    #         sender = self.sender()
-    #         category = {
-    #             self.category_list_live: 'LIVE',
-    #             self.category_list_movies: 'Movies',
-    #             self.category_list_series: 'Series'
-    #         }.get(sender)
-
-    #         if not category:
-    #             return
-
-    #         selected_item = sender.currentItem()
-    #         if not selected_item:
-    #             return
-
-    #         selected_text = selected_item.text()
-
-    #         self.handle_xtream_click(selected_item, selected_text, category, sender)
-
-    #     except Exception as e:
-    #         print(f"Error occurred while handling click: {e}")
-
-    # def channel_item_double_clicked(self, item):
-    #     try:
-    #         sender = self.sender()
-    #         category = {
-    #             self.channel_list_live: 'LIVE',
-    #             self.channel_list_movies: 'Movies',
-    #             self.channel_list_series: 'Series'
-    #         }.get(sender)
-
-    #         if not category:
-    #             return
-
-    #         selected_item = sender.currentItem()
-    #         if not selected_item:
-    #             return
-
-    #         selected_text = selected_item.text()
-    #         list_widget = self.get_list_widget(category)
-    #         current_scroll_position = list_widget.verticalScrollBar().value()
-    #         stack = self.navigation_stacks[category]
-
-    #         if stack:
-    #             stack[-1]['scroll_position'] = current_scroll_position
-    #         else:
-    #             self.top_level_scroll_positions[category] = current_scroll_position
-
-    #         self.handle_xtream_double_click(selected_item, selected_text, category, sender)
-
-    #     except Exception as e:
-    #         print(f"Error occurred while handling double click: {e}")
-
-    # def handle_xtream_click(self, selected_item, selected_text, tab_name, sender):
-    #     try:
-    #         list_widget = self.get_category_list_widget(tab_name)
-            
-    #         if tab_name != "Series":
-    #             if selected_text == "All":
-    #                 self.fetch_all_channels(tab_name)
-    #             elif selected_text in [group["category_name"] for group in self.categories_per_stream_type[tab_name]]:
-    #                 self.fetch_channels(selected_text, tab_name)
-    #             else:
-    #                 selected_entry = selected_item.data(Qt.UserRole)
-    #                 if selected_entry and "url" in selected_entry:
-    #                     self.play_channel(selected_entry)
-    #             return
-    #         elif tab_name == "Series":
-    #             if selected_text in [group["category_name"] for group in self.categories_per_stream_type["Series"]]:
-    #                 self.fetch_series_in_category(selected_text)
-    #                 return
-
-    #     except Exception as e:
-    #         print(f"Error loading channels: {e}")
-
-    # def handle_xtream_double_click(self, selected_item, selected_text, tab_name, sender):
-    #     try:
-    #         list_widget = self.get_list_widget(tab_name)
-    #         stack = self.navigation_stacks[tab_name]
-
-    #         if selected_text == self.go_back_text:
-    #             if stack:
-    #                 stack.pop()
-    #                 if stack:
-    #                     last_level = stack[-1]
-    #                     level = last_level['level']
-    #                     data = last_level['data']
-    #                     scroll_position = last_level.get('scroll_position', 0)
-    #                     if level == 'channels':
-    #                         self.entries_per_stream_type[tab_name] = data['entries']
-    #                         self.show_channels(list_widget, tab_name)
-    #                         list_widget.verticalScrollBar().setValue(scroll_position)
-    #                     elif level == 'series_categories':
-    #                         self.show_series_in_category(data['series_list'], restore_scroll_position=True, scroll_position=scroll_position)
-    #                     elif level == 'series':
-    #                         self.show_seasons(data['seasons'], restore_scroll_position=True, scroll_position=scroll_position)
-    #                     elif level == 'season':
-    #                         self.show_episodes(data['episodes'], restore_scroll_position=True, scroll_position=scroll_position)
-    #                 else:
-    #                     self.update_category_lists(tab_name)
-    #                     list_widget.verticalScrollBar().setValue(self.top_level_scroll_positions.get(tab_name, 0))
-    #             else:
-    #                 self.update_category_lists(tab_name)
-    #                 list_widget.verticalScrollBar().setValue(self.top_level_scroll_positions.get(tab_name, 0))
-    #             return
-
-    #         if tab_name != "Series":
-    #             if selected_text in [group["category_name"] for group in self.categories_per_stream_type[tab_name]]:
-    #                 self.fetch_channels(selected_text, tab_name)
-    #             else:
-    #                 selected_entry = selected_item.data(Qt.UserRole)
-    #                 print(selected_entry)
-    #                 if selected_entry and "url" in selected_entry:
-    #                     self.play_channel(selected_entry)
-    #             return
-
-    #         # Series logic
-    #         if tab_name == "Series":
-    #             if not stack:
-    #                 print("not stack")
-    #                 if selected_text in [group["category_name"] for group in self.categories_per_stream_type["Series"]]:
-    #                     self.fetch_series_in_category(selected_text)
-    #                     return
-    #             elif stack[-1]['level'] == 'series_categories':
-    #                 print("series category")
-    #                 series_entry = selected_item.data(Qt.UserRole)
-    #                 if series_entry and "series_id" in series_entry:
-    #                     self.fetch_seasons(series_entry)
-    #                     return
-    #             elif stack[-1]['level'] == 'series':
-    #                 print("series")
-    #                 season_number = selected_item.data(Qt.UserRole)
-    #                 series_entry = stack[-1]['data']['series_entry']
-    #                 self.fetch_episodes(series_entry, season_number)
-    #                 return
-    #             elif stack[-1]['level'] == 'season':
-    #                 print("seasons\n\n\n")
-    #                 selected_entry = selected_item.data(Qt.UserRole)
-    #                 if selected_entry and "url" in selected_entry:
-    #                     self.play_channel(selected_entry)
-    #                 return
-
-    #     except Exception as e:
-    #         print(f"Error loading channels: {e}")
-
-    # def update_category_lists(self, tab_name):
-    #     if tab_name == 'LIVE':
-    #         self.search_bar_live.clear()
-    #     elif tab_name == 'Movies':
-    #         self.search_bar_movies.clear()
-    #     elif tab_name == 'Series':
-    #         self.search_bar_series.clear()
-
-    #     try:
-    #         # list_widget = self.get_list_widget(tab_name)
-    #         list_widget = self.get_category_list_widget(tab_name)
-    #         list_widget.clear()
-
-    #         if self.navigation_stacks[tab_name]:
-    #             go_back_item = QListWidgetItem(self.go_back_text)
-    #             go_back_item.setIcon(self.go_back_icon)
-    #             list_widget.addItem(go_back_item)
-
-    #         if tab_name == 'LIVE':
-    #             channel_icon = self.live_channel_icon
-    #         elif tab_name == 'Movies':
-    #             channel_icon = self.movies_channel_icon
-    #         elif tab_name == 'Series':
-    #             channel_icon = self.series_channel_icon
-    #         else:
-    #             channel_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon)
-
-    #         group_list = self.categories_per_stream_type[tab_name]
-    #         category_names = sorted(group["category_name"] for group in group_list)
-    #         items = []
-    #         for category_name in category_names:
-    #             item = QListWidgetItem(category_name)
-    #             item.setIcon(channel_icon)
-    #             items.append(item)
-
-    #         items.sort(key=lambda x: x.text())
-    #         for item in items:
-    #             list_widget.addItem(item)
-
-    #         item = QListWidgetItem("All")
-    #         item.setIcon(channel_icon)
-    #         list_widget.insertItem(0, QListWidgetItem(item))
-
-    #         scroll_position = self.top_level_scroll_positions.get(tab_name, 0)
-    #         list_widget.verticalScrollBar().setValue(scroll_position)
-    #     except Exception as e:
-    #         print(f"Error updating category lists: {e}")
-    #         self.animate_progress(self.progress_bar.value(), 100, "Error updating lists")
-
-    # def fetch_channels(self, category_name, tab_name):
-    #     try:
-    #         category_id = next(g["category_id"] for g in self.categories_per_stream_type[tab_name] if g["category_name"] == category_name)
-
-    #         list_widget = self.get_list_widget(tab_name)
-    #         current_scroll_position = list_widget.verticalScrollBar().value()
-    #         stack = self.navigation_stacks[tab_name]
-    #         if stack:
-    #             stack[-1]['scroll_position'] = current_scroll_position
-    #         else:
-    #             self.top_level_scroll_positions[tab_name] = current_scroll_position
-
-    #         http_method = self.get_http_method()
-    #         params = {
-    #             'username': self.username,
-    #             'password': self.password,
-    #             'action': '',
-    #             'category_id': category_id
-    #         }
-
-    #         if tab_name == "LIVE":
-    #             params['action'] = 'get_live_streams'
-    #             stream_type = "live"
-    #         elif tab_name == "Movies":
-    #             params['action'] = 'get_vod_streams'
-    #             stream_type = "movie"
-
-    #         streams_url = f"{self.server}/player_api.php"
-    #         response = self.make_request(http_method, streams_url, params)
-    #         response.raise_for_status()
-
-    #         data = response.json()
-    #         if not isinstance(data, list):
-    #             raise ValueError("Expected a list of channels")
-
-    #         self.entries_per_stream_type[tab_name] = data
-    #         entries = self.entries_per_stream_type[tab_name]
-    #         # print(entries)
-
-    #         for entry in entries:
-    #             stream_id = entry.get("stream_id")
-    #             epg_channel_id = entry.get("epg_channel_id")
-    #             if epg_channel_id:
-    #                 epg_channel_id = epg_channel_id.strip().lower()
-    #             else:
-    #                 epg_channel_id = None
-
-    #             container_extension = entry.get("container_extension", "m3u8")
-    #             if stream_id:
-    #                 entry["url"] = f"{self.server}/{stream_type}/{self.username}/{self.password}/{stream_id}.{container_extension}"
-    #             else:
-    #                 entry["url"] = None
-    #             entry["epg_channel_id"] = epg_channel_id
-
-    #         self.navigation_stacks[tab_name].append({'level': 'channels', 'data': {'tab_name': tab_name, 'entries': entries}, 'scroll_position': 0})
-    #         self.show_channels(list_widget, tab_name)
-
-    #     except requests.RequestException as e:
-    #         print(f"Network error: {e}")
-    #         self.animate_progress(self.progress_bar.value(), 100, "Network Error")
-    #     except ValueError as e:
-    #         print(f"Data validation error: {e}")
-    #         self.animate_progress(self.progress_bar.value(), 100, "Invalid channel data received")
-    #     except Exception as e:
-    #         print(f"Error fetching channels: {e}")
-    #         self.animate_progress(self.progress_bar.value(), 100, "Error fetching channels")
-
-    # def show_channels(self, list_widget, tab_name):
-    #     try:
-    #         list_widget.clear()
-
-    #         # if self.navigation_stacks[tab_name]:
-    #         #     go_back_item = QListWidgetItem(self.go_back_text)
-    #         #     go_back_item.setIcon(self.go_back_icon)
-    #         #     list_widget.addItem(go_back_item)
-
-    #         if tab_name == 'LIVE':
-    #             channel_icon = self.live_channel_icon
-    #         elif tab_name == 'Movies':
-    #             channel_icon = self.movies_channel_icon
-    #         elif tab_name == 'Series':
-    #             channel_icon = self.series_channel_icon
-    #         else:
-    #             channel_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon)
-
-    #         items = []
-    #         now = datetime.now(tz=tz.tzlocal()) if self.epg_data else None
-
-    #         for idx, entry in enumerate(self.entries_per_stream_type[tab_name]):
-    #             display_text = entry.get("name", "Unnamed Channel")
-    #             tooltip_text = ""
-
-    #             # try:
-    #             #     icon_url = entry.get('stream_icon')
-
-    #             #     headers = {'User-Agent': CUSTOM_USER_AGENT}
-
-    #             #     image = QImage()
-    #             #     image.loadFromData(requests.get(icon_url, headers=headers).content)
-
-    #             #     channel_icon = QIcon(QPixmap(image))
-
-    #             # except Exception as e:
-    #             #     print(f"failed to do icon: {e}")
-
-
-    #             if tab_name == "LIVE" and self.epg_data:
-    #                 epg_channel_id = entry.get('epg_channel_id')
-    #                 if epg_channel_id and epg_channel_id in self.epg_data:
-    #                     epg_info_list = self.epg_data[epg_channel_id]
-    #                 else:
-    #                     channel_name = normalize_channel_name(entry.get('name', ''))
-    #                     epg_channel_id = self.epg_name_map.get(channel_name, None)
-    #                     epg_info_list = self.epg_data.get(epg_channel_id, [])
-
-    #                 if epg_info_list:
-    #                     current_epg = None
-    #                     for epg in epg_info_list:
-    #                         start_time = parser.parse(epg['start_time'])
-    #                         stop_time = parser.parse(epg['stop_time'])
-    #                         if start_time <= now <= stop_time:
-    #                             current_epg = epg
-    #                             break
-    #                         elif start_time > now:
-    #                             current_epg = epg
-    #                             break
-
-    #                     if current_epg:
-    #                         start_time = parser.parse(current_epg['start_time']).astimezone(tz.tzlocal())
-    #                         stop_time = parser.parse(current_epg['stop_time']).astimezone(tz.tzlocal())
-    #                         start_time_formatted = start_time.strftime("%I:%M %p")
-    #                         stop_time_formatted = stop_time.strftime("%I:%M %p")
-    #                         title = current_epg['title']
-    #                         display_text += f" - {title} ({start_time_formatted} - {stop_time_formatted})"
-    #                         tooltip_text = current_epg['description']
-    #                     else:
-    #                         display_text += " - No Current EPG Data Available"
-    #                         tooltip_text = "No current EPG information found."
-    #                 else:
-    #                     display_text += " - No EPG Data"
-    #                     tooltip_text = "No EPG information found."
-
-    #             item = QListWidgetItem(display_text)
-    #             item.setData(Qt.UserRole, entry)
-    #             item.setIcon(channel_icon)
-
-    #             if tooltip_text:
-    #                 description_html = html.escape(tooltip_text)
-    #                 tooltip_text_formatted = f"""
-    #                 <div style="max-width: 300px; white-space: normal;">
-    #                     {description_html}
-    #                 </div>
-    #                 """
-    #                 item.setToolTip(tooltip_text_formatted)
-
-    #             items.append(item)
-
-    #         items.sort(key=lambda x: x.text())
-    #         for item in items:
-    #             list_widget.addItem(item)
-
-    #         list_widget.verticalScrollBar().setValue(0)
-    #     except Exception as e:
-    #         print(f"Error displaying channels: {e}")
-
-    # def fetch_series_in_category(self, category_name):
-    #     try:
-    #         list_widget = self.get_list_widget('Series')
-    #         current_scroll_position = list_widget.verticalScrollBar().value()
-    #         stack = self.navigation_stacks['Series']
-    #         if stack:
-    #             stack[-1]['scroll_position'] = current_scroll_position
-    #         else:
-    #             self.top_level_scroll_positions['Series'] = current_scroll_position
-
-    #         category_id = next(g["category_id"] for g in self.categories_per_stream_type["Series"] if g["category_name"] == category_name)
-
-    #         http_method = self.get_http_method()
-    #         params = {
-    #             'username': self.username,
-    #             'password': self.password,
-    #             'action': 'get_series',
-    #             'category_id': category_id
-    #         }
-
-    #         streams_url = f"{self.server}/player_api.php"
-    #         response = self.make_request(http_method, streams_url, params)
-    #         response.raise_for_status()
-
-    #         series_list = response.json()
-
-    #         self.navigation_stacks['Series'].append({'level': 'series_categories', 'data': {'series_list': series_list}, 'scroll_position': 0})
-    #         self.show_series_in_category(series_list)
-
-    #     except Exception as e:
-    #         print(f"Error fetching series: {e}")
-
-    # def show_series_in_category(self, series_list, restore_scroll_position=False, scroll_position=0):
-    #     try:
-    #         list_widget = self.channel_list_series
-
-    #         list_widget.clear()
-
-    #         items = []
-    #         for entry in series_list:
-    #             item = QListWidgetItem(entry["name"])
-    #             item.setData(Qt.UserRole, entry)
-    #             item.setIcon(self.series_channel_icon)
-    #             items.append(item)
-
-    #         items.sort(key=lambda x: x.text())
-    #         for item in items:
-    #             list_widget.addItem(item)
-
-    #         if restore_scroll_position:
-    #             QTimer.singleShot(0, lambda: list_widget.verticalScrollBar().setValue(scroll_position))
-    #         else:
-    #             list_widget.verticalScrollBar().setValue(0)
-
-    #         self.current_series_list = series_list
-    #     except Exception as e:
-    #         print(f"Error displaying series: {e}")
-
-    # def fetch_seasons(self, series_entry):
-    #     try:
-    #         list_widget = self.get_list_widget('Series')
-    #         current_scroll_position = list_widget.verticalScrollBar().value()
-    #         stack = self.navigation_stacks['Series']
-    #         if stack:
-    #             stack[-1]['scroll_position'] = current_scroll_position
-
-    #         http_method = self.get_http_method()
-    #         params = {
-    #             'username': self.username,
-    #             'password': self.password,
-    #             'action': 'get_series_info',
-    #             'series_id': series_entry["series_id"]
-    #         }
-
-    #         episodes_url = f"{self.server}/player_api.php"
-    #         response = self.make_request(http_method, episodes_url, params)
-    #         response.raise_for_status()
-
-    #         series_info = response.json()
-    #         self.series_info = series_info
-
-    #         seasons = list(series_info.get("episodes", {}).keys())
-    #         self.navigation_stacks['Series'].append({'level': 'series', 'data': {'series_entry': series_entry, 'seasons': seasons}, 'scroll_position': 0})
-    #         self.show_seasons(seasons)
-
-    #     except Exception as e:
-    #         print(f"Error fetching seasons: {e}")
-
-    # def show_seasons(self, seasons, restore_scroll_position=False, scroll_position=0):
-    #     try:
-    #         list_widget = self.channel_list_series
-    #         list_widget.clear()
-    #         if self.navigation_stacks['Series']:
-    #             go_back_item = QListWidgetItem(self.go_back_text)
-    #             go_back_item.setIcon(self.go_back_icon)
-    #             list_widget.addItem(go_back_item)
-
-    #         seasons_int = sorted([int(season) for season in seasons])
-    #         items = []
-    #         for season in seasons_int:
-    #             item = QListWidgetItem(f"Season {season}")
-    #             item.setData(Qt.UserRole, str(season))
-    #             item.setIcon(self.series_channel_icon)
-    #             items.append(item)
-
-    #         for item in items:
-    #             list_widget.addItem(item)
-
-    #         if restore_scroll_position:
-    #             QTimer.singleShot(0, lambda: list_widget.verticalScrollBar().setValue(scroll_position))
-    #         else:
-    #             list_widget.verticalScrollBar().setValue(0)
-
-    #         self.current_seasons = [str(season) for season in seasons_int]
-    #     except Exception as e:
-    #         print(f"Error displaying seasons: {e}")
-
-    # def fetch_episodes(self, series_entry, season_number):
-    #     try:
-    #         list_widget = self.get_list_widget('Series')
-    #         current_scroll_position = list_widget.verticalScrollBar().value()
-    #         stack = self.navigation_stacks['Series']
-    #         if stack:
-    #             stack[-1]['scroll_position'] = current_scroll_position
-
-    #         episodes = self.series_info.get("episodes", {}).get(str(season_number), [])
-    #         self.navigation_stacks['Series'].append({'level': 'season', 'data': {'season_number': season_number, 'episodes': episodes}, 'scroll_position': 0})
-    #         self.show_episodes(episodes)
-
-    #     except Exception as e:
-    #         print(f"Error fetching episodes: {e}")
-
-    # def show_episodes(self, episodes, restore_scroll_position=False, scroll_position=0):
-    #     try:
-    #         list_widget = self.channel_list_series
-    #         list_widget.clear()
-    #         if self.navigation_stacks['Series']:
-    #             go_back_item = QListWidgetItem(self.go_back_text)
-    #             go_back_item.setIcon(self.go_back_icon)
-    #             list_widget.addItem(go_back_item)
-
-    #         episodes_sorted = sorted(episodes, key=lambda x: int(x.get('episode_num', 0)))
-    #         stack = self.navigation_stacks['Series']
-    #         if stack and len(stack) >= 2 and 'series_entry' in stack[-2]['data']:
-    #             series_title = stack[-2]['data']['series_entry'].get('name', '').strip()
-    #         else:
-    #             series_title = "Unknown Series"
-
-    #         items = []
-    #         for episode in episodes_sorted:
-    #             raw_episode_title = str(episode.get('title', 'Untitled Episode')).strip()
-    #             season = str(episode.get('season', '1'))
-    #             episode_num = str(episode.get('episode_num', '1'))
-
-    #             try:
-    #                 season_int = int(season)
-    #                 episode_num_int = int(episode_num)
-    #                 episode_code = f"S{season_int:02d}E{episode_num_int:02d}"
-    #             except ValueError:
-    #                 episode_code = f"S{season}E{episode_num}"
-
-    #             if series_title.lower() in raw_episode_title.lower():
-    #                 episode_title = re.sub(re.escape(series_title), '', raw_episode_title, flags=re.IGNORECASE).strip(" -")
-    #             else:
-    #                 episode_title = raw_episode_title
-
-    #             if episode_code.lower() in episode_title.lower():
-    #                 episode_title = re.sub(re.escape(episode_code), '', episode_title, flags=re.IGNORECASE).strip(" -")
-
-    #             display_text = f"{series_title} - {episode_code} - {episode_title}"
-
-    #             episode_entry = {
-    #                 "season": season,
-    #                 "episode_num": episode_num,
-    #                 "name": display_text,
-    #                 "url": f"{self.server}/series/{self.username}/{self.password}/{episode['id']}.{episode.get('container_extension', 'm3u8')}",
-    #                 "title": episode_title
-    #             }
-
-    #             item = QListWidgetItem(display_text)
-    #             item.setData(Qt.UserRole, episode_entry)
-    #             item.setIcon(self.series_channel_icon)
-    #             items.append(item)
-
-    #         for item in items:
-    #             list_widget.addItem(item)
-
-    #         if restore_scroll_position:
-    #             QTimer.singleShot(0, lambda: list_widget.verticalScrollBar().setValue(scroll_position))
-    #         else:
-    #             list_widget.verticalScrollBar().setValue(0)
-
-    #         self.current_episodes = episodes_sorted
-    #     except Exception as e:
-    #         print(f"Error displaying episodes: {e}")
-
-    # def play_channel(self, entry):
-    #     try:
-    #         stream_url = entry.get("url")
-    #         print(f"stream_url: {stream_url}")
-    #         if not stream_url:
-    #             self.animate_progress(0, 100, "Stream URL not found")
-    #             return
-    #         if self.external_player_command:
-    #             subprocess.Popen([self.external_player_command, stream_url])
-    #         else:
-    #             self.animate_progress(0, 100, "No external player configured")
-    #     except Exception as e:
-    #         print(f"Error playing channel: {e}")
-    #         self.animate_progress(0, 100, "Error playing channel")
-
-    # def on_tab_change(self, index):
-    #     try:
-    #         tab_name = self.tab_widget.tabText(index)
-
-    #         if tab_name == "Info":
-    #             if not self.info_tab_initialized:
-    #                 self.result_display.clear()
-    #                 self.result_display.setText("Ready to fetch and display data.")
-    #                 self.info_tab_initialized = True
-    #             return
-    #         elif tab_name == "Settings":
-    #             pass
-    #         elif self.login_type == 'xtream':
-    #             stack = self.navigation_stacks.get(tab_name, [])
-    #             list_widget = self.get_list_widget(tab_name)
-
-    #             if not stack:
-    #                 self.update_category_lists(tab_name)
-    #                 list_widget.verticalScrollBar().setValue(
-    #                     self.top_level_scroll_positions.get(tab_name, 0)
-    #                 )
-    #             else:
-    #                 last_level = stack[-1]
-    #                 level = last_level['level']
-    #                 data = last_level['data']
-    #                 scroll_position = last_level.get('scroll_position', 0)
-
-    #                 if level == 'channels':
-    #                     self.entries_per_stream_type[tab_name] = data['entries']
-    #                     self.show_channels(list_widget, tab_name)
-    #                     list_widget.verticalScrollBar().setValue(scroll_position)
-    #                 elif level == 'series_categories':
-    #                     self.show_series_in_category(
-    #                         data['series_list'],
-    #                         restore_scroll_position=True,
-    #                         scroll_position=scroll_position
-    #                     )
-    #                 elif level == 'series':
-    #                     self.show_seasons(
-    #                         data['seasons'],
-    #                         restore_scroll_position=True,
-    #                         scroll_position=scroll_position
-    #                     )
-    #                 elif level == 'season':
-    #                     self.show_episodes(
-    #                         data['episodes'],
-    #                         restore_scroll_position=True,
-    #                         scroll_position=scroll_position
-    #                     )
-
-    #     except Exception as e:
-    #         print(f"Error while switching tabs: {e}")
-
     def choose_external_player(self):
         file_dialog = QFileDialog()
         file_dialog.setFileMode(QFileDialog.ExistingFile)
@@ -2221,158 +1443,109 @@ class IPTVPlayerApp(QMainWindow):
         menu.addAction(sort_action)
         menu.exec_(sender.viewport().mapToGlobal(position))
 
-    def sort_channel_list(self, list_widget):
+    def KeyPressed(self, e, search_bar, stream_type):
+        search_history_size = len(self.search_history_list)
+
+        match e.key():
+            case Qt.Key_Return:
+                text = search_bar.text()
+
+                self.list_widgets[stream_type].clear()
+
+                if text:
+                    self.search_history_list.insert(0, text)
+                    self.search_history_list_idx = 0
+
+                    if search_history_size >= self.max_search_history_size:
+                        self.search_history_list.pop(-1)
+
+                self.search_in_list(stream_type, text)
+
+            case Qt.Key_Up:
+                #Check if list is empty
+                if not self.search_history_list:
+                    return
+
+                self.search_history_list_idx += 1
+                if self.search_history_list_idx >= search_history_size:
+                    self.search_history_list_idx = search_history_size - 1
+
+                search_bar.setText(self.search_history_list[self.search_history_list_idx])
+
+            case Qt.Key_Down:
+                #Check if list is empty
+                if not self.search_history_list:
+                    return
+
+                self.search_history_list_idx -= 1
+                if self.search_history_list_idx < 0:
+                    self.search_history_list_idx = -1
+                    search_bar.clear()
+                else:
+                    search_bar.setText(self.search_history_list[self.search_history_list_idx])
+
+            case Qt.Key_Left:
+                search_bar.cursorBackward(False, 1)
+
+            case Qt.Key_Right:
+                search_bar.cursorForward(False, 1)
+
+            case Qt.Key_Backspace:
+                search_bar.backspace()
+
+            case Qt.Key_Delete:
+                search_bar.cursorForward(False, 1)
+                search_bar.backspace()
+
+            case _:
+                search_bar.insert(e.text())
+                # e.accept()
+
+    def update_list_after_search(self, list_widget, stream_type):
         try:
-            items = []
-            for i in range(list_widget.count()):
-                item = list_widget.item(i)
-                if item.text() != self.go_back_text:
-                    items.append(item)
+            print("emitted list widget")
+            # print(list_widget)
 
-            items.sort(key=lambda x: x.text())
-            list_widget.clear()
-
-            current_tab = self.tab_widget.tabText(self.tab_widget.currentIndex())
-            if self.navigation_stacks[current_tab]:
-                go_back_item = QListWidgetItem(self.go_back_text)
-                go_back_item.setIcon(self.go_back_icon)
-                list_widget.addItem(go_back_item)
-
-            for item in items:
-                list_widget.addItem(item)
+            self.list_widgets[stream_type] = list_widget[0]
         except Exception as e:
-            print(f"Error sorting channel list: {e}")
+            print(f"update after search failed: {e}")
 
-    def search_in_list(self, tab_name, text):
-        list_widget = self.get_list_widget(tab_name)
-        if list_widget.count() == 0:
-            self.show_channels(list_widget, tab_name)
-            print("list is empty")
+    def search_in_list(self, stream_type, text):
+        try:
+            self.set_progress_bar(0, f"Loading search results...")
 
-        if not list_widget:
-            print("not list widget")
-            # for i in range(len(self.entries_per_stream_type[tab_name])):
-            #     print(self.entries_per_stream_type[tab_name][i])
-            #     print("\n\n")
-            return
+            self.list_widgets[stream_type].clear()
 
-        list_widget.clear()
-
-        # for i in range(len(self.navigation_stacks[tab_name])):
-        #     print(self.navigation_stacks[tab_name][i])
-        #     print("\n\n")
-        # for i in range(len(self.entries_per_stream_type[tab_name])):
-        #     print(self.entries_per_stream_type[tab_name][i])
-        #     print("\n\n")
-        # if self.navigation_stacks[tab_name]:
-        #     go_back_item = QListWidgetItem(self.go_back_text)
-        #     go_back_item.setIcon(self.go_back_icon)
-        #     list_widget.addItem(go_back_item)
-
-        filtered_items = []
-        if self.login_type == 'xtream':
-            if tab_name != "Series":
-                print("not series")
-                print(tab_name)
-                # print(list(self.entries_per_stream_type['LIVE']))
-                # print(list(self.navigation_stacks['LIVE']))
-
-                for entry in self.entries_per_stream_type[tab_name]:
-                    if text.lower() in entry['name'].lower():
-                        item = QListWidgetItem(entry['name'])
-                        item.setData(Qt.UserRole, entry)
-                        if tab_name == 'LIVE':
-                            channel_icon = self.live_channel_icon
-                        elif tab_name == 'Movies':
-                            channel_icon = self.movies_channel_icon
-                        elif tab_name == 'Series':
-                            channel_icon = self.series_channel_icon
-                        else:
-                            channel_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon)
-                        item.setIcon(channel_icon)
-                        filtered_items.append(item)
-            else:
-                print("is series")
-                # print(self.navigation_stacks['Series'])
-                # print(self.navigation_stacks['Series'][-1]['data'])
-                stack = self.navigation_stacks['Series']
-
-                # try:
-                #     for i in range(len(self.navigation_stacks['Series'][-1]['data']['series_list'])):
-                #         print(self.navigation_stacks['Series'][-1]['data']['series_list'][i])
-                #         print("\n")
-                # except Exception as e:
-                #     print(f"failed: {e}")
-
-                if not stack or stack[-1]['level'] == 'series_categories':
-                    print("in series category")
-                    # for group in self.categories_per_stream_type["Series"]:
-                    #     if text.lower() in group["category_name"].lower():
-                    #         item = QListWidgetItem(group["category_name"])
-                    #         item.setIcon(self.series_channel_icon)
-                    #         filtered_items.append(item)
-                    for entry in self.current_series_list:
+            match self.series_navigation_level:
+                case 0: #LIVE/VOD/Series
+                    for entry in self.currently_loaded_entries[stream_type]:
                         if text.lower() in entry['name'].lower():
                             item = QListWidgetItem(entry['name'])
                             item.setData(Qt.UserRole, entry)
-                            item.setIcon(self.series_channel_icon)
-                            filtered_items.append(item)
-                elif stack[-1]['level'] == 'series':
-                    print("in series list")
-                    # for entry in self.current_series_list:
-                    #     if text.lower() in entry['name'].lower():
-                    #         item = QListWidgetItem(entry['name'])
-                    #         item.setData(Qt.UserRole, entry)
-                    #         item.setIcon(self.series_channel_icon)
-                    #         filtered_items.append(item)
-                    for season in self.current_seasons:
-                        if text.lower() in f"Season {season}".lower():
+
+                            self.list_widgets[stream_type].addItem(item)
+                case 1: #Seasons
+                    self.list_widgets[stream_type].addItem(self.go_back_text)
+
+                    for season in self.currently_loaded_entries['Seasons'].keys():
+                        if text.lower() in f"season {season}":
                             item = QListWidgetItem(f"Season {season}")
-                            item.setData(Qt.UserRole, season)
-                            item.setIcon(self.series_channel_icon)
-                            filtered_items.append(item)
+                            item.setData(Qt.UserRole, self.currently_loaded_entries['Seasons'][season])
 
-                    go_back_item = QListWidgetItem(self.go_back_text)
-                    go_back_item.setIcon(self.go_back_icon)
-                    list_widget.addItem(go_back_item)
-                elif stack[-1]['level'] == 'season':
-                    print("in seasons")
-                    # for season in self.current_seasons:
-                    #     if text.lower() in f"Season {season}".lower():
-                    #         item = QListWidgetItem(f"Season {season}")
-                    #         item.setData(Qt.UserRole, season)
-                    #         item.setIcon(self.series_channel_icon)
-                    #         filtered_items.append(item)
-                # elif stack[-1]['level'] == 'episode':
-                #     print("in episodes")
-                    for episode in self.current_episodes:
+                            self.list_widgets[stream_type].addItem(item)
+                case 2: #Episodes
+                    self.list_widgets[stream_type].addItem(self.go_back_text)
+
+                    for episode in self.currently_loaded_entries['Episodes']:
                         if text.lower() in episode['title'].lower():
-                            episode_entry = {
-                                "season": episode.get('season'),
-                                "episode_num": episode['episode_num'],
-                                "name": f"{episode['title']}",
-                                "url": f"{self.server}/series/{self.username}/{self.password}/{episode['id']}.{episode.get('container_extension', 'm3u8')}",
-                                "title": episode['title']
-                            }
-                            # item = QListWidgetItem(f"Episode {episode['episode_num']}: {episode['title']}")
-                            item = QListWidgetItem(f"{episode['title']}")
-                            item.setData(Qt.UserRole, episode_entry)
-                            item.setIcon(self.series_channel_icon)
-                            filtered_items.append(item)
-                    go_back_item = QListWidgetItem(self.go_back_text)
-                    go_back_item.setIcon(self.go_back_icon)
-                    list_widget.addItem(go_back_item)
-                else:
-                    print("was nothing")
+                            item = QListWidgetItem(episode['title'])
+                            item.setData(Qt.UserRole, episode)
 
-        if not filtered_items:
-            print("filtered items is empty")
-            list_widget.addItem(QListWidgetItem("No search results..."))
-            return
+                            self.list_widgets[stream_type].addItem(item)
 
-        filtered_items.sort(key=lambda x: x.text())
-        for item in filtered_items:
-            list_widget.addItem(item)
+            self.set_progress_bar(100, f"Loaded search results")
+        except Exception as e:
+            print(f"search in list failed: {e}")
 
     def get_list_widget(self, tab_name):
         return self.list_widgets.get(tab_name)
