@@ -14,14 +14,16 @@ from dateutil import parser, tz
 import xml.etree.ElementTree as ET
 from PyQt5.QtGui import QIcon, QFont, QImage, QPixmap
 from PyQt5.QtCore import (
-    Qt, QTimer, QPropertyAnimation, QEasingCurve, QSize, QObject, pyqtSignal, QRunnable, pyqtSlot, QThreadPool
+    Qt, QTimer, QPropertyAnimation, QEasingCurve, QSize, QObject, pyqtSignal, 
+    QRunnable, pyqtSlot, QThreadPool, QModelIndex, QAbstractItemModel, QVariant
 )
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QLineEdit, QLabel, QPushButton,
     QListWidget, QWidget, QFileDialog, QCheckBox, QSizePolicy, QHBoxLayout,
     QDialog, QFormLayout, QDialogButtonBox, QTabWidget, QListWidgetItem,
-    QSpinBox, QMenu, QAction, QTextEdit, QGridLayout, QMessageBox, QListView
+    QSpinBox, QMenu, QAction, QTextEdit, QGridLayout, QMessageBox, QListView,
+    QTreeWidget, QTreeWidgetItem, QTreeView
 )
 
 import threading
@@ -578,6 +580,59 @@ class AddCredentialsDialog(QtWidgets.QDialog):
             m3u_url = self.m3u_url_entry.text().strip()
             return ('m3u_plus', name, m3u_url)
 
+# class EPGModel(QAbstractItemModel):
+#     def __init__(self, top_level_nodes):
+#         QAbstractItemModel.__init__(self)
+#         self.top_level_nodes = top_level_nodes
+#         self.columns = 5
+
+#     def columnCount(self, parent):
+#         return self.columns
+
+#     def rowCount(self, parent):
+#         total = len(self.top_level_nodes)
+#         for node in self.top_level_nodes:
+#             total += len(node.subnodes)
+#         return total
+
+#     def data(self, index, role):
+
+#         if not index.isValid():
+#             return QVariant()
+
+#         if role == Qt.DisplayRole:
+#             obj = index.internalPointer()
+#             return obj.name
+
+#         return QVariant()
+
+#     def index(self, row, column, parent):
+#         if not parent.isValid():
+#             if row > (len(self.top_level_nodes) - 1):
+#                 return QModelIndex()
+
+#             return self.createIndex(row, column, self.top_level_nodes[row])
+
+#         return QModelIndex()
+
+#     def parent(self, index):
+#         if not index.isValid():
+#             return QModelIndex()
+
+#         node = index.internalPointer()
+#         if node.parent is None:
+#             return QModelIndex()
+
+#         else:
+#             return self.createIndex(node.parent.row, 0, node.parent)
+
+# class FakeEntry(object):
+#     def __init__(self, name, row, children=[]):
+#         self.parent = None
+#         self.row = row
+#         self.name = 'foo'
+#         self.subnodes = children
+
 class IPTVPlayerApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -645,9 +700,10 @@ class IPTVPlayerApp(QMainWindow):
         self.initProgressBar()        
 
         #Add widgets to tabs
-        self.live_tab_layout.addWidget(self.search_bar_live, 0, 0, 1, 2)
+        self.live_tab_layout.addWidget(self.search_bar_live, 0, 0, 1, 3)
         self.live_tab_layout.addWidget(self.category_list_live, 1, 0)
         self.live_tab_layout.addWidget(self.channel_list_live, 1, 1)
+        self.live_tab_layout.addWidget(self.live_EPG_info, 1, 2)
 
         self.movies_tab_layout.addWidget(self.search_bar_movies, 0, 0, 1, 2)
         self.movies_tab_layout.addWidget(self.category_list_movies, 1, 0)
@@ -772,6 +828,11 @@ class IPTVPlayerApp(QMainWindow):
         self.channel_list_movies.setBatchSize(2000)
         self.channel_list_series.setBatchSize(2000)
 
+        #Connect functions to entry list events
+        self.channel_list_live.itemDoubleClicked.connect(self.streaming_item_double_clicked)
+        self.channel_list_movies.itemDoubleClicked.connect(self.streaming_item_double_clicked)
+        self.channel_list_series.itemDoubleClicked.connect(self.streaming_item_double_clicked)
+
         #Put entry lists in list
         self.list_widgets = {
             'LIVE': self.channel_list_live,
@@ -788,6 +849,11 @@ class IPTVPlayerApp(QMainWindow):
         self.category_list_live.setSortingEnabled(True)
         self.category_list_movies.setSortingEnabled(True)
         self.category_list_series.setSortingEnabled(True)
+
+        #Connect functions to category list events
+        self.category_list_live.itemClicked.connect(self.category_item_clicked)
+        self.category_list_movies.itemClicked.connect(self.category_item_clicked)
+        self.category_list_series.itemClicked.connect(self.category_item_clicked)
 
         #Put category lists in list
         self.category_list_widgets = {
@@ -808,14 +874,56 @@ class IPTVPlayerApp(QMainWindow):
                 }
             """)
 
-        #Connect functions to entry and category list events
-        self.channel_list_live.itemDoubleClicked.connect(self.streaming_item_double_clicked)
-        self.channel_list_movies.itemDoubleClicked.connect(self.streaming_item_double_clicked)
-        self.channel_list_series.itemDoubleClicked.connect(self.streaming_item_double_clicked)
+        #Create entry info window
+        self.live_EPG_info = QTreeWidget()
+        self.live_EPG_info.setColumnCount(2)
+        self.live_EPG_info.setHeaderLabels(["From", "To", "Name"])
+        self.live_EPG_info.setWordWrap(True)
+        self.live_EPG_info.setTextElideMode(Qt.ElideLeft)
 
-        self.category_list_live.itemClicked.connect(self.category_item_clicked)
-        self.category_list_movies.itemClicked.connect(self.category_item_clicked)
-        self.category_list_series.itemClicked.connect(self.category_item_clicked)
+        item1 = QTreeWidgetItem(["19:00", "20:00", "The tribute: Battle of the bands"])
+        lbl1 = QLabel("De tributebands halen ook in deze tweede aflevering van The Tribute: Battle of the Bands weer alles uit de kast om de harten van de vakjury te veroveren. Door Angela Groothuizen, Cesar Zuiderwijk en Spike voor zich te winnen, maken ze immers kans op deelname aan het concert in de Ziggo Dome.")
+        lbl1.setWordWrap(True)
+        desc1 = QTreeWidgetItem()
+        item1.addChild(desc1)
+
+        item2 = QTreeWidgetItem(["20:00", "21:00", "Sport: Schaatsen - World Cup Calgary"])
+        lbl2 = QLabel("Bij de wereldbekerwedstrijden in Calgary staat onder meer 10 kilometer op het programma. De Italiaan Davide Ghiotto heeft al aangekondigd dat hij het wereldrecord van de Zweed Nils van der Poel wil aanvallen. ")
+        lbl2.setWordWrap(True)
+        desc2 = QTreeWidgetItem()
+        item2.addChild(desc2)
+
+        self.live_EPG_info.insertTopLevelItems(0, [item1, item2])
+        self.live_EPG_info.setItemWidget(desc1, 2, lbl1)
+        self.live_EPG_info.setItemWidget(desc2, 2, lbl2)
+
+        self.live_EPG_info.setColumnWidth(0, 75)
+        self.live_EPG_info.setColumnWidth(1, 50)
+
+
+        # self.live_EPG_info = QTreeView()
+        # entry1 = FakeEntry("Test", 0, children=["hoi hoe gaat ie"])
+        # entry2 = FakeEntry("", 1, children=["hoi hoe gaat ie", "Joaah"])
+        # model = EPGModel([entry1, entry2])
+        # self.live_EPG_info.setModel(model)
+        # self.live_EPG_info.setFirstColumnSpanned(0, QModelIndex(), True)
+
+
+
+        # treeview = QTreeView()
+        # treeview.setModel(model)
+        # self.live_EPG_info.setModel(model)
+        # self.live_EPG_info = treeview
+
+        # self.live_EPG_info.setFirstColumnSpanned(0, QModelIndex(), True)
+        # self.live_EPG_info.setFirstColumnSpanned(0, item1.index(), True)
+
+        # abstract = QAbstractItemModel().__init__()
+        # print(abstract)
+
+        # print(QModelIndex().model().parent())
+        # print(QModelIndex())
+
 
     def initSettingsTab(self):
         #Create items in settings tab
@@ -1616,7 +1724,8 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     player = IPTVPlayerApp()
-    player.show()
+    # player.show()
+    player.showMaximized()
     QtWidgets.qApp.processEvents()
     player.load_data_startup()
     sys.exit(app.exec_())
