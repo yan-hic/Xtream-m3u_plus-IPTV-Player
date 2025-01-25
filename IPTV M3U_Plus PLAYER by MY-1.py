@@ -584,9 +584,9 @@ class IPTVPlayerApp(QMainWindow):
         self.setWindowTitle("Xtream IPTV Player by MY-1 V3.5")
         self.resize(1300, 900)
 
-        self.default_font_size = 10
-        self.go_back_text = " Go back"
-        self.all_categories_text = " All"
+        self.default_font_size      = 10
+        self.go_back_text           = " Go back"
+        self.all_categories_text    = " All"
 
         #navigation level indicates in what list level we are
         #LIVE and VOD have no navigation levels.
@@ -613,57 +613,84 @@ class IPTVPlayerApp(QMainWindow):
             'Episodes': []
         }
 
-        self.navigation_stacks = {
-            'LIVE': [],
-            'Movies': [],
-            'Series': []
-        }
-        self.external_player_command = ""
-        self.load_external_player_command()
+        self.server                 = ""
+        self.username               = ""
+        self.password               = ""
+        self.login_type             = None
 
-        self.top_level_scroll_positions = {
-            'LIVE': 0,
-            'Movies': 0,
-            'Series': 0
-        }
+        self.epg_data               = {}  
+        self.channel_id_to_names    = {}  
+        self.epg_last_updated       = None  
+        self.epg_id_mapping         = {}
+        self.epg_name_map           = {}
 
-        self.server = ""
-        self.username = ""
-        self.password = ""
-        self.login_type = None  
-        self.epg_data = {}  
-        self.channel_id_to_names = {}  
-        self.epg_last_updated = None  
+        #Create threadpool
         self.threadpool = QThreadPool()
-        self.threadpool.setMaxThreadCount(1)
-        self.epg_id_mapping = {}
-        self.epg_name_map = {}
+        self.threadpool.setMaxThreadCount(10)
 
-        self.go_back_icon = self.style().standardIcon(QtWidgets.QStyle.SP_ArrowBack)
-        self.live_channel_icon = self.style().standardIcon(QtWidgets.QStyle.SP_MediaVolume)
-        self.movies_channel_icon = self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay)
-        self.series_channel_icon = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
+        self.external_player_command = self.load_external_player_command()
 
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
+        self.initIcons()
+
+        self.initTabWidget()
+
+        self.initSearchBars()
+
+        self.initIPTVinfo()
+
+        self.initEntryListWidgets()
+
+        self.initSettingsTab()
+
+        self.initProgressBar()        
+
+        #Add widgets to tabs
+        self.live_tab_layout.addWidget(self.search_bar_live, 0, 0, 1, 2)
+        self.live_tab_layout.addWidget(self.category_list_live, 1, 0)
+        self.live_tab_layout.addWidget(self.channel_list_live, 1, 1)
+
+        self.movies_tab_layout.addWidget(self.search_bar_movies, 0, 0, 1, 2)
+        self.movies_tab_layout.addWidget(self.category_list_movies, 1, 0)
+        self.movies_tab_layout.addWidget(self.channel_list_movies, 1, 1)
+
+        self.series_tab_layout.addWidget(self.search_bar_series, 0, 0, 1, 2)
+        self.series_tab_layout.addWidget(self.category_list_series, 1, 0)
+        self.series_tab_layout.addWidget(self.channel_list_series, 1, 1)
+        
+        self.info_tab_layout.addWidget(self.iptv_info_text)
+
+        #Create main widget
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        main_layout = QVBoxLayout(main_widget)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
 
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
-        content_layout.setSpacing(10)
+        #Add everything to the main_layout
+        main_layout.addWidget(self.tab_widget)
+        main_layout.addWidget(self.progress_bar)
 
+    def initIcons(self):
+        self.tab_icon_size = QSize(24, 24)
+
+        #Create tab icons
+        self.live_icon       = self.style().standardIcon(QtWidgets.QStyle.SP_MediaVolume)
+        self.movies_icon     = self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay)
+        self.series_icon     = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
+        self.info_icon       = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
+        self.settings_icon   = self.style().standardIcon(QtWidgets.QStyle.SP_DriveCDIcon)
+
+        #Create list entry icons
+        self.live_channel_icon      = self.style().standardIcon(QtWidgets.QStyle.SP_MediaVolume)
+        self.movies_channel_icon    = self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay)
+        self.series_channel_icon    = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
+
+        #Create misc icons
+        self.go_back_icon           = self.style().standardIcon(QtWidgets.QStyle.SP_ArrowBack)
+
+    def initTabWidget(self):
         #Create tab widget
         self.tab_widget = QTabWidget()
-        content_layout.addWidget(self.tab_widget)
-
-        self.tab_icon_size = QSize(24, 24)
-        live_icon       = self.style().standardIcon(QtWidgets.QStyle.SP_MediaVolume)
-        movies_icon     = self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay)
-        series_icon     = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
-        info_icon       = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
-        settings_icon   = self.style().standardIcon(QtWidgets.QStyle.SP_DriveCDIcon)
 
         self.live_tab       = QWidget()
         self.movies_tab     = QWidget()
@@ -671,24 +698,24 @@ class IPTVPlayerApp(QMainWindow):
         self.info_tab       = QWidget()
         self.settings_tab   = QWidget()
 
-        self.tab_widget.addTab(self.live_tab,       live_icon,      "LIVE")
-        self.tab_widget.addTab(self.movies_tab,     movies_icon,    "Movies")
-        self.tab_widget.addTab(self.series_tab,     series_icon,    "Series")
-        self.tab_widget.addTab(self.info_tab,       info_icon,      "Info")
-        self.tab_widget.addTab(self.settings_tab,   settings_icon,  "Settings")
-
-        self.live_layout        = QGridLayout(self.live_tab)
-        self.movies_layout      = QGridLayout(self.movies_tab)
-        self.series_layout      = QGridLayout(self.series_tab)
+        self.live_tab_layout        = QGridLayout(self.live_tab)
+        self.movies_tab_layout      = QGridLayout(self.movies_tab)
+        self.series_tab_layout      = QGridLayout(self.series_tab)
         self.info_tab_layout    = QVBoxLayout(self.info_tab)
         self.settings_layout    = QVBoxLayout(self.settings_tab)
 
+        self.tab_widget.addTab(self.live_tab,       self.live_icon,      "LIVE")
+        self.tab_widget.addTab(self.movies_tab,     self.movies_icon,    "Movies")
+        self.tab_widget.addTab(self.series_tab,     self.series_icon,    "Series")
+        self.tab_widget.addTab(self.info_tab,       self.info_icon,      "Info")
+        self.tab_widget.addTab(self.settings_tab,   self.settings_icon,  "Settings")
+
+    def initSearchBars(self):
         self.search_bar_live = QLineEdit()
         self.search_bar_live.setPlaceholderText("Search Live Channels...")
         self.search_bar_live.setClearButtonEnabled(True)
         self.add_search_icon(self.search_bar_live)
         self.search_bar_live.keyPressEvent = lambda e: self.KeyPressed(e, self.search_bar_live, 'LIVE')
-
 
         self.search_bar_movies = QLineEdit()
         self.search_bar_movies.setPlaceholderText("Search Movies...")
@@ -704,14 +731,16 @@ class IPTVPlayerApp(QMainWindow):
         # self.search_bar_series.textChanged.connect(lambda text: self.search_in_list('Series', text))
         self.search_bar_series.keyPressEvent = lambda e: self.KeyPressed(e, self.search_bar_series, 'Series')
 
-        self.result_display = QTextEdit(self.info_tab)
-        self.result_display.setReadOnly(True)
+    def initIPTVinfo(self):
+        self.iptv_info_text = QTextEdit(self.info_tab)
+        self.iptv_info_text.setReadOnly(True)
         default_font = QFont()
         default_font.setPointSize(self.default_font_size)
-        self.result_display.setFont(default_font)
+        self.iptv_info_text.setFont(default_font)
 
         self.info_tab_initialized = False
 
+    def initEntryListWidgets(self):
         #Create lists for channels
         self.channel_list_live      = QListWidget()
         self.channel_list_movies    = QListWidget()
@@ -722,6 +751,7 @@ class IPTVPlayerApp(QMainWindow):
         self.channel_list_movies.setSortingEnabled(True)
         self.channel_list_series.setSortingEnabled(True)
 
+        #Set that lists load items in batches to prevent screen freezing
         self.channel_list_live.setLayoutMode(QListView.Batched)
         self.channel_list_movies.setLayoutMode(QListView.Batched)
         self.channel_list_series.setLayoutMode(QListView.Batched)
@@ -730,6 +760,7 @@ class IPTVPlayerApp(QMainWindow):
         self.channel_list_movies.setBatchSize(2000)
         self.channel_list_series.setBatchSize(2000)
 
+        #Put entry lists in list
         self.list_widgets = {
             'LIVE': self.channel_list_live,
             'Movies': self.channel_list_movies,
@@ -741,16 +772,19 @@ class IPTVPlayerApp(QMainWindow):
         self.category_list_movies   = QListWidget()
         self.category_list_series   = QListWidget()
 
+        #Enable sorting
         self.category_list_live.setSortingEnabled(True)
         self.category_list_movies.setSortingEnabled(True)
         self.category_list_series.setSortingEnabled(True)
 
+        #Put category lists in list
         self.category_list_widgets = {
             'LIVE': self.category_list_live,
             'Movies': self.category_list_movies,
             'Series': self.category_list_series,
         }
 
+        #Configure visuals of the lists
         standard_icon_size = QSize(24, 24)
         for list_widget in [self.channel_list_live, self.channel_list_movies, self.channel_list_series, self.category_list_live, self.category_list_movies, self.category_list_series]:
             list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -762,21 +796,16 @@ class IPTVPlayerApp(QMainWindow):
                 }
             """)
 
-        #Add widgets to tabs
-        self.live_layout.addWidget(self.search_bar_live, 0, 0, 1, 2)
-        self.live_layout.addWidget(self.category_list_live, 1, 0)
-        self.live_layout.addWidget(self.channel_list_live, 1, 1)
+        #Connect functions to entry and category list events
+        self.channel_list_live.itemDoubleClicked.connect(self.streaming_item_double_clicked)
+        self.channel_list_movies.itemDoubleClicked.connect(self.streaming_item_double_clicked)
+        self.channel_list_series.itemDoubleClicked.connect(self.streaming_item_double_clicked)
 
-        self.movies_layout.addWidget(self.search_bar_movies, 0, 0, 1, 2)
-        self.movies_layout.addWidget(self.category_list_movies, 1, 0)
-        self.movies_layout.addWidget(self.channel_list_movies, 1, 1)
+        self.category_list_live.itemClicked.connect(self.category_item_clicked)
+        self.category_list_movies.itemClicked.connect(self.category_item_clicked)
+        self.category_list_series.itemClicked.connect(self.category_item_clicked)
 
-        self.series_layout.addWidget(self.search_bar_series, 0, 0, 1, 2)
-        self.series_layout.addWidget(self.category_list_series, 1, 0)
-        self.series_layout.addWidget(self.channel_list_series, 1, 1)
-        
-        self.info_tab_layout.addWidget(self.result_display)
-
+    def initSettingsTab(self):
         #Create items in settings tab
         self.settings_layout.setSpacing(20)
         self.settings_layout.setAlignment(Qt.AlignTop)
@@ -875,23 +904,7 @@ class IPTVPlayerApp(QMainWindow):
         self.settings_layout.addLayout(buttons_layout)
         self.settings_layout.addLayout(checkbox_layout)
 
-        #Set widget events
-        # self.tab_widget.currentChanged.connect(self.on_tab_change)
-
-        # self.channel_list_live.itemDoubleClicked.connect(self.channel_item_double_clicked)
-        # self.channel_list_movies.itemDoubleClicked.connect(self.channel_item_double_clicked)
-        # self.channel_list_series.itemDoubleClicked.connect(self.channel_item_double_clicked)
-        self.channel_list_live.itemDoubleClicked.connect(self.streaming_item_double_clicked)
-        self.channel_list_movies.itemDoubleClicked.connect(self.streaming_item_double_clicked)
-        self.channel_list_series.itemDoubleClicked.connect(self.streaming_item_double_clicked)
-
-        # self.category_list_live.itemClicked.connect(self.channel_item_clicked)
-        # self.category_list_movies.itemClicked.connect(self.channel_item_clicked)
-        # self.category_list_series.itemClicked.connect(self.channel_item_clicked)
-        self.category_list_live.itemClicked.connect(self.category_item_clicked)
-        self.category_list_movies.itemClicked.connect(self.category_item_clicked)
-        self.category_list_series.itemClicked.connect(self.category_item_clicked)
-
+    def initProgressBar(self):
         #Create progress bar
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setValue(0)
@@ -899,10 +912,6 @@ class IPTVPlayerApp(QMainWindow):
         self.progress_bar.setMaximum(100)
         self.progress_bar.setFixedHeight(25)
         self.progress_bar.setTextVisible(True)
-
-        #Add everything to the main_layout
-        main_layout.addWidget(content_widget)
-        main_layout.addWidget(self.progress_bar)
 
         #Animate progress bar
         self.playlist_progress_animation = QPropertyAnimation(self.progress_bar, b"value")
@@ -973,7 +982,7 @@ class IPTVPlayerApp(QMainWindow):
 
         font = QFont()
         font.setPointSize(value)
-        self.result_display.setFont(font)
+        self.iptv_info_text.setFont(font)
 
     def extract_credentials_from_m3u_plus_url(self, url):
         try:
@@ -1128,7 +1137,7 @@ class IPTVPlayerApp(QMainWindow):
             f"Expiry: {expiry}\n"
         )
 
-        self.result_display.setText(formatted_data)
+        self.iptv_info_text.setText(formatted_data)
         QtWidgets.qApp.processEvents()
 
         #Process categories and entries
@@ -1554,10 +1563,15 @@ class IPTVPlayerApp(QMainWindow):
         return self.category_list_widgets.get(tab_name)
 
     def load_external_player_command(self):
+        external_player_command = ""
+
         config = configparser.ConfigParser()
         config.read('config.ini')
         if 'ExternalPlayer' in config:
-            self.external_player_command = config['ExternalPlayer'].get('Command', '')
+            # self.external_player_command = config['ExternalPlayer'].get('Command', '')
+            external_player_command = config['ExternalPlayer'].get('Command', '')
+
+        return external_player_command
 
     def save_external_player_command(self):
         config = configparser.ConfigParser()
