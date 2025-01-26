@@ -27,6 +27,7 @@ from PyQt5.QtWidgets import (
 )
 
 import threading
+import base64
 
 CUSTOM_USER_AGENT = (
     "Connection: Keep-Alive User-Agent: okhttp/5.0.0-alpha.2 "
@@ -282,96 +283,70 @@ class SearchWorker(QRunnable):
             print(f"failed search worker: {e}")
 
 class EPGWorkerSignals(QObject):
-    finished = pyqtSignal(dict, dict)
+    finished = pyqtSignal(list)
     error = pyqtSignal(str)
 
 class EPGWorker(QRunnable):
-    def __init__(self, server, username, password, http_method):
+    def __init__(self, server, username, password, stream_id):
         super().__init__()
         self.server = server
         self.username = username
         self.password = password
-        self.http_method = http_method
+        self.stream_id = stream_id
         self.signals = EPGWorkerSignals()
 
     @pyqtSlot()
     def run(self):
         try:
-            cache_file = 'epg_cache1.xml'
-            cache_valid = False
-            if os.path.exists(cache_file):
-                cache_age = time.time() - os.path.getmtime(cache_file)
-                if cache_age < 3600:  
-                    cache_valid = True
+            #Creating url for requesting EPG data for specific stream
+            epg_url = f"{self.server}/player_api.php?username={self.username}&password={self.password}&action=get_simple_data_table&stream_id={self.stream_id}"
+            headers = {'User-Agent': CUSTOM_USER_AGENT}
 
-            if cache_valid:
-                with open(cache_file, 'rb') as f:
-                    epg_xml_data = f.read()
-            else:
-                epg_url = f"{self.server}/xmltv.php?username={self.username}&password={self.password}"
-                headers = {'User-Agent': CUSTOM_USER_AGENT}
-                if self.http_method == 'POST':
-                    response = requests.post(epg_url, headers=headers, timeout=10)
-                else:
-                    print("requesting EPG")
-                    response = requests.get(epg_url, headers=headers, timeout=10)
-                response.raise_for_status()
-                epg_xml_data = response.content
-                with open(cache_file, 'wb') as f:
-                    f.write(epg_xml_data)
+            #Requesting EPG data
+            response = requests.get(epg_url, headers=headers, timeout=10)
+            epg_data = response.json()
 
-            print("going to parse epg_data")
-            epg_data, channel_id_to_names = self.parse_epg_data(epg_xml_data)
-            print("Finished parsing epg data")
-            self.signals.finished.emit(epg_data, channel_id_to_names)
+            #Decrypt EPG data with base 64
+            decrypted_epg_data = self.decryptEPGData(epg_data)
+
+            self.signals.finished.emit(decrypted_epg_data)
         except Exception as e:
+            print(f"failed epg worker: {e}")
             self.signals.error.emit(str(e))
 
-    def parse_epg_data(self, epg_xml_data):
-        epg_dict = {}
-        channel_id_to_names = {}
+    def decryptEPGData(self, epg_data):
         try:
-            epg_tree = ET.fromstring(epg_xml_data)
-            for channel in epg_tree.findall('channel'):
-                channel_id = channel.get('id')
-                if channel_id:
-                    channel_id = channel_id.strip().lower()
-                    display_names = []
-                    for display_name_elem in channel.findall('display-name'):
-                        if display_name_elem.text:
-                            display_name = display_name_elem.text.strip()
-                            normalized_name = normalize_channel_name(display_name)
-                            display_names.append(normalized_name)
-                    channel_id_to_names[channel_id] = display_names
+            decrypted_epg_data = []
 
-            for programme in epg_tree.findall('programme'):
-                channel_id = programme.get('channel')
-                if channel_id:
-                    channel_id = channel_id.strip().lower()
-                start_time = programme.get('start')
-                stop_time = programme.get('stop')
-                title_elem = programme.find('title')
-                description_elem = programme.find('desc')
+            for epg_entry in epg_data['epg_listings']:
+                #Get start, stop time and date
+                start_timestamp = datetime.fromtimestamp(int(epg_entry['start_timestamp']))
+                stop_timestamp  = datetime.fromtimestamp(int(epg_entry['stop_timestamp']))
 
-                title = title_elem.text.strip() if title_elem is not None and title_elem.text else ''
-                description = description_elem.text.strip() if description_elem is not None and description_elem.text else ''
+                # start_time  = f"{start_timestamp.hour:02}:{start_timestamp.minute:02}"
+                # stop_time   = f"{stop_timestamp.hour:02}:{stop_timestamp.minute:02}"
+                # date        = f"{start_timestamp.day:02}-{start_timestamp.month:02}-{start_timestamp.year}"
+                start_time  = start_timestamp
+                stop_time   = stop_timestamp
+                date        = f"{start_timestamp.day:02}-{start_timestamp.month:02}-{start_timestamp.year}"
 
-                epg_entry = {
+                #Decode program name and descryption
+                program_name        = base64.b64decode(epg_entry['title']).decode("utf-8")
+                program_description = base64.b64decode(epg_entry['description']).decode("utf-8")
+
+                #Put only necessary EPG data in list
+                decrypted_epg_data.append({
                     'start_time': start_time,
                     'stop_time': stop_time,
-                    'title': title,
-                    'description': description
-                }
+                    'program_name': program_name,
+                    'description': program_description,
+                    'date': date
+                    })
 
-                if channel_id not in epg_dict:
-                    epg_dict[channel_id] = []
-                epg_dict[channel_id].append(epg_entry)
-
-            return epg_dict, channel_id_to_names
-
+            #return decrypted EPG data
+            return decrypted_epg_data
         except Exception as e:
-            print(f"Error parsing EPG data: {e}")
-            return {}, {}
+            print(f"failed decrypting: {e}")
 
 class AddressBookDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
@@ -580,59 +555,6 @@ class AddCredentialsDialog(QtWidgets.QDialog):
             m3u_url = self.m3u_url_entry.text().strip()
             return ('m3u_plus', name, m3u_url)
 
-# class EPGModel(QAbstractItemModel):
-#     def __init__(self, top_level_nodes):
-#         QAbstractItemModel.__init__(self)
-#         self.top_level_nodes = top_level_nodes
-#         self.columns = 5
-
-#     def columnCount(self, parent):
-#         return self.columns
-
-#     def rowCount(self, parent):
-#         total = len(self.top_level_nodes)
-#         for node in self.top_level_nodes:
-#             total += len(node.subnodes)
-#         return total
-
-#     def data(self, index, role):
-
-#         if not index.isValid():
-#             return QVariant()
-
-#         if role == Qt.DisplayRole:
-#             obj = index.internalPointer()
-#             return obj.name
-
-#         return QVariant()
-
-#     def index(self, row, column, parent):
-#         if not parent.isValid():
-#             if row > (len(self.top_level_nodes) - 1):
-#                 return QModelIndex()
-
-#             return self.createIndex(row, column, self.top_level_nodes[row])
-
-#         return QModelIndex()
-
-#     def parent(self, index):
-#         if not index.isValid():
-#             return QModelIndex()
-
-#         node = index.internalPointer()
-#         if node.parent is None:
-#             return QModelIndex()
-
-#         else:
-#             return self.createIndex(node.parent.row, 0, node.parent)
-
-# class FakeEntry(object):
-#     def __init__(self, name, row, children=[]):
-#         self.parent = None
-#         self.row = row
-#         self.name = 'foo'
-#         self.subnodes = children
-
 class IPTVPlayerApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -703,7 +625,7 @@ class IPTVPlayerApp(QMainWindow):
         self.live_tab_layout.addWidget(self.search_bar_live, 0, 0, 1, 3)
         self.live_tab_layout.addWidget(self.category_list_live, 1, 0)
         self.live_tab_layout.addWidget(self.channel_list_live, 1, 1)
-        self.live_tab_layout.addWidget(self.live_EPG_info, 1, 2)
+        self.live_tab_layout.addWidget(self.live_EPG_info_box, 1, 2)
 
         self.movies_tab_layout.addWidget(self.search_bar_movies, 0, 0, 1, 2)
         self.movies_tab_layout.addWidget(self.category_list_movies, 1, 0)
@@ -830,6 +752,7 @@ class IPTVPlayerApp(QMainWindow):
 
         #Connect functions to entry list events
         self.channel_list_live.itemDoubleClicked.connect(self.streaming_item_double_clicked)
+        self.channel_list_live.itemClicked.connect(self.streaming_item_clicked)
         self.channel_list_movies.itemDoubleClicked.connect(self.streaming_item_double_clicked)
         self.channel_list_series.itemDoubleClicked.connect(self.streaming_item_double_clicked)
 
@@ -874,12 +797,18 @@ class IPTVPlayerApp(QMainWindow):
                 }
             """)
 
+        self.live_EPG_info_box = QWidget()
+        self.live_EPG_info_layout = QVBoxLayout(self.live_EPG_info_box)
+
+        EPG_box_label = QLabel("EPG data")
+        EPG_box_label.setFont(QFont('Arial', 14))
+
         #Create entry info window
         self.live_EPG_info = QTreeWidget()
         self.live_EPG_info.setColumnCount(2)
-        self.live_EPG_info.setHeaderLabels(["From", "To", "Name"])
-        self.live_EPG_info.setWordWrap(True)
-        self.live_EPG_info.setTextElideMode(Qt.ElideLeft)
+        self.live_EPG_info.setHeaderLabels(["Date", "From", "To", "Name"])
+        # self.live_EPG_info.setWordWrap(True)
+        # self.live_EPG_info.setTextElideMode(Qt.ElideLeft)
 
         item1 = QTreeWidgetItem(["19:00", "20:00", "The tribute: Battle of the bands"])
         lbl1 = QLabel("De tributebands halen ook in deze tweede aflevering van The Tribute: Battle of the Bands weer alles uit de kast om de harten van de vakjury te veroveren. Door Angela Groothuizen, Cesar Zuiderwijk en Spike voor zich te winnen, maken ze immers kans op deelname aan het concert in de Ziggo Dome.")
@@ -897,33 +826,12 @@ class IPTVPlayerApp(QMainWindow):
         self.live_EPG_info.setItemWidget(desc1, 2, lbl1)
         self.live_EPG_info.setItemWidget(desc2, 2, lbl2)
 
-        self.live_EPG_info.setColumnWidth(0, 75)
+        self.live_EPG_info.setColumnWidth(0, 120)
         self.live_EPG_info.setColumnWidth(1, 50)
+        self.live_EPG_info.setColumnWidth(2, 50)
 
-
-        # self.live_EPG_info = QTreeView()
-        # entry1 = FakeEntry("Test", 0, children=["hoi hoe gaat ie"])
-        # entry2 = FakeEntry("", 1, children=["hoi hoe gaat ie", "Joaah"])
-        # model = EPGModel([entry1, entry2])
-        # self.live_EPG_info.setModel(model)
-        # self.live_EPG_info.setFirstColumnSpanned(0, QModelIndex(), True)
-
-
-
-        # treeview = QTreeView()
-        # treeview.setModel(model)
-        # self.live_EPG_info.setModel(model)
-        # self.live_EPG_info = treeview
-
-        # self.live_EPG_info.setFirstColumnSpanned(0, QModelIndex(), True)
-        # self.live_EPG_info.setFirstColumnSpanned(0, item1.index(), True)
-
-        # abstract = QAbstractItemModel().__init__()
-        # print(abstract)
-
-        # print(QModelIndex().model().parent())
-        # print(QModelIndex())
-
+        self.live_EPG_info_layout.addWidget(EPG_box_label)
+        self.live_EPG_info_layout.addWidget(self.live_EPG_info)
 
     def initSettingsTab(self):
         #Create items in settings tab
@@ -1361,6 +1269,138 @@ class IPTVPlayerApp(QMainWindow):
 
             self.animate_progress(0, 100, "Loading finished")
 
+        except Exception as e:
+            print(f"Failed: {e}")
+
+    def startEPGWorker(self, stream_id):
+        epg_worker = EPGWorker(self.server, self.username, self.password, stream_id)
+        epg_worker.signals.finished.connect(self.process_epg_data)
+        # epg_worker.signals.error.connect(self.on_fetch_data_error)
+        # epg_worker.signals.progress_bar.connect(self.animate_progress)
+        self.threadpool.start(epg_worker)
+
+    def process_epg_data(self, epg_data):
+        try:
+            print("received epg data")
+            # print(epg_data)
+
+            #Create entry info window
+            # self.live_EPG_info = QTreeWidget()
+            # self.live_EPG_info.setColumnCount(2)
+            # self.live_EPG_info.setHeaderLabels(["From", "To", "Name"])
+            # self.live_EPG_info.setWordWrap(True)
+            # self.live_EPG_info.setTextElideMode(Qt.ElideLeft)
+
+            #Get current time
+            current_timestamp = time.mktime(datetime.now().timetuple())
+            # day     = current_timestamp.day 
+            # month   = current_timestamp.month 
+            # year    = current_timestamp.year 
+            # hour    = current_timestamp.hour 
+            # minute  = current_timestamp.minute
+
+            closest_idx = 0
+            min_time_diff = 2**31 - 1
+
+            # for item in self.live_EPG_info:
+            #     print(item)
+            self.live_EPG_info.clear()
+
+            items = []
+
+            for idx, epg_entry in enumerate(epg_data):
+                # print(epg_entry)
+                start_timestamp      = epg_entry['start_time']
+                stop_timestamp       = epg_entry['stop_time']
+                program_name    = epg_entry['program_name']
+                description     = epg_entry['description']
+                date            = epg_entry['date']
+
+                start_time = start_timestamp.strftime("%H:%M")
+                stop_time = stop_timestamp.strftime("%H:%M")
+
+                unix_stop_time = time.mktime(stop_timestamp.timetuple())
+                # print(unix_start_time - current_timestamp)
+
+                # abs_time_diff = abs(unix_stop_time - current_timestamp)
+                time_diff = unix_stop_time - current_timestamp
+                # print(abs_time_diff)
+
+                # if abs_time_diff < min_time_diff:
+                if time_diff < 0:
+                    pass
+                    # min_time_diff = abs_time_diff
+                    # closest_idx = idx
+                else:
+                # time_diff = start_timestamp - current_timestamp
+                # if time_diff.day == 0:
+                #     pass
+
+                    #Create EPG item
+                    item    = QTreeWidgetItem([date, start_time, stop_time, program_name])
+                    label   = QLabel(description)
+                    label.setWordWrap(True)
+                    desc    = QTreeWidgetItem()
+                    item.addChild(desc)
+
+                    # items.append(item)
+                    self.live_EPG_info.addTopLevelItem(item)
+                    self.live_EPG_info.setItemWidget(desc, 3, label)
+
+            # found_item = self.live_EPG_info.itemAt(0, closest_idx)
+
+            # print(f"closest idx: {closest_idx}, time diff: {min_time_diff}")
+            # print(found_item.text(0))
+            # print(found_item.text(1))
+            # print(found_item.text(3))
+            # self.live_EPG_info.scrollToItem(found_item)
+
+            # self.live_EPG_info.scrollContentsBy(closest_idx, 0)
+            # vert_scroll = self.live_EPG_info.verticalScrollBar()
+
+        except Exception as e:
+            print(f"Failed processing EPG: {e}")
+
+    def streaming_item_clicked(self, clicked_item):
+        try:
+            sender = self.sender()
+
+            print(clicked_item.text())
+
+            selected_item = sender.currentItem()
+            if not selected_item:
+                return
+
+            selected_item_text = selected_item.text()
+            selected_item_data = selected_item.data(Qt.UserRole)
+            print(f"name = {selected_item_text}")
+
+            match self.series_navigation_level:
+                case 0:
+                    if clicked_item.text() == self.go_back_text:
+                        return
+
+                    stream_type = selected_item_data['stream_type']
+                    print(f"level 0: {stream_type}")
+
+                    if stream_type == 'live':
+                        print(f"Starting EPG worker: {selected_item_data['stream_id']}")
+                        self.startEPGWorker(selected_item_data['stream_id'])
+
+                    elif stream_type == 'movie':
+                        # self.play_item(selected_item_data['url'])
+                        pass
+
+                    elif stream_type == 'series':
+                        # self.series_navigation_level = 1
+                        # self.show_seasons(selected_item_data)
+                        pass
+
+                    return
+                case 1:
+                    return
+                case 2:
+                    return
         except Exception as e:
             print(f"Failed: {e}")
 
