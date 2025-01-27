@@ -311,7 +311,6 @@ class EPGWorker(QRunnable):
 
             self.signals.finished.emit(decrypted_epg_data)
         except Exception as e:
-            print(f"failed epg worker: {e}")
             self.signals.error.emit(str(e))
 
     def decryptEPGData(self, epg_data):
@@ -322,13 +321,7 @@ class EPGWorker(QRunnable):
                 #Get start, stop time and date
                 start_timestamp = datetime.fromtimestamp(int(epg_entry['start_timestamp']))
                 stop_timestamp  = datetime.fromtimestamp(int(epg_entry['stop_timestamp']))
-
-                # start_time  = f"{start_timestamp.hour:02}:{start_timestamp.minute:02}"
-                # stop_time   = f"{stop_timestamp.hour:02}:{stop_timestamp.minute:02}"
-                # date        = f"{start_timestamp.day:02}-{start_timestamp.month:02}-{start_timestamp.year}"
-                start_time  = start_timestamp
-                stop_time   = stop_timestamp
-                date        = f"{start_timestamp.day:02}-{start_timestamp.month:02}-{start_timestamp.year}"
+                date            = f"{start_timestamp.day:02}-{start_timestamp.month:02}-{start_timestamp.year}"
 
                 #Decode program name and descryption
                 program_name        = base64.b64decode(epg_entry['title']).decode("utf-8")
@@ -336,8 +329,8 @@ class EPGWorker(QRunnable):
 
                 #Put only necessary EPG data in list
                 decrypted_epg_data.append({
-                    'start_time': start_time,
-                    'stop_time': stop_time,
+                    'start_time': start_timestamp,
+                    'stop_time': stop_timestamp,
                     'program_name': program_name,
                     'description': program_description,
                     'date': date
@@ -797,40 +790,25 @@ class IPTVPlayerApp(QMainWindow):
                 }
             """)
 
-        self.live_EPG_info_box = QWidget()
-        self.live_EPG_info_layout = QVBoxLayout(self.live_EPG_info_box)
+        self.live_EPG_info_box      = QWidget()
+        self.live_EPG_info_layout   = QVBoxLayout(self.live_EPG_info_box)
 
-        EPG_box_label = QLabel("EPG data")
-        EPG_box_label.setFont(QFont('Arial', 14))
+        #Create Live TV Channel name label
+        self.EPG_box_label = QLabel("Select channel to view Live TV info")
+        self.EPG_box_label.setFont(QFont('Arial', 14))
 
         #Create entry info window
         self.live_EPG_info = QTreeWidget()
         self.live_EPG_info.setColumnCount(2)
         self.live_EPG_info.setHeaderLabels(["Date", "From", "To", "Name"])
-        # self.live_EPG_info.setWordWrap(True)
-        # self.live_EPG_info.setTextElideMode(Qt.ElideLeft)
 
-        item1 = QTreeWidgetItem(["19:00", "20:00", "The tribute: Battle of the bands"])
-        lbl1 = QLabel("De tributebands halen ook in deze tweede aflevering van The Tribute: Battle of the Bands weer alles uit de kast om de harten van de vakjury te veroveren. Door Angela Groothuizen, Cesar Zuiderwijk en Spike voor zich te winnen, maken ze immers kans op deelname aan het concert in de Ziggo Dome.")
-        lbl1.setWordWrap(True)
-        desc1 = QTreeWidgetItem()
-        item1.addChild(desc1)
-
-        item2 = QTreeWidgetItem(["20:00", "21:00", "Sport: Schaatsen - World Cup Calgary"])
-        lbl2 = QLabel("Bij de wereldbekerwedstrijden in Calgary staat onder meer 10 kilometer op het programma. De Italiaan Davide Ghiotto heeft al aangekondigd dat hij het wereldrecord van de Zweed Nils van der Poel wil aanvallen. ")
-        lbl2.setWordWrap(True)
-        desc2 = QTreeWidgetItem()
-        item2.addChild(desc2)
-
-        self.live_EPG_info.insertTopLevelItems(0, [item1, item2])
-        self.live_EPG_info.setItemWidget(desc1, 2, lbl1)
-        self.live_EPG_info.setItemWidget(desc2, 2, lbl2)
-
+        #Set column widths of EPG info window
         self.live_EPG_info.setColumnWidth(0, 120)
         self.live_EPG_info.setColumnWidth(1, 50)
         self.live_EPG_info.setColumnWidth(2, 50)
 
-        self.live_EPG_info_layout.addWidget(EPG_box_label)
+        #Add TV channel label and EPG data to info box
+        self.live_EPG_info_layout.addWidget(self.EPG_box_label)
         self.live_EPG_info_layout.addWidget(self.live_EPG_info)
 
     def initSettingsTab(self):
@@ -1273,69 +1251,59 @@ class IPTVPlayerApp(QMainWindow):
             print(f"Failed: {e}")
 
     def startEPGWorker(self, stream_id):
+        #Create EPG thread worker that will fetch EPG data
         epg_worker = EPGWorker(self.server, self.username, self.password, stream_id)
-        epg_worker.signals.finished.connect(self.process_epg_data)
-        # epg_worker.signals.error.connect(self.on_fetch_data_error)
-        # epg_worker.signals.progress_bar.connect(self.animate_progress)
+
+        #Connect functions to signals
+        epg_worker.signals.finished.connect(self.ProcessEPGData)
+        epg_worker.signals.error.connect(self.onEPGFetchError)
+
+        #Start EPG thread
         self.threadpool.start(epg_worker)
 
-    def process_epg_data(self, epg_data):
-        try:
-            print("received epg data")
-            # print(epg_data)
+    def onEPGFetchError(self, error_msg):
+        print(f"Failed fetching EPG data: {error_msg}")
+        self.set_progress_bar(100, "Failed loading EPG data")
 
-            #Create entry info window
-            # self.live_EPG_info = QTreeWidget()
-            # self.live_EPG_info.setColumnCount(2)
-            # self.live_EPG_info.setHeaderLabels(["From", "To", "Name"])
-            # self.live_EPG_info.setWordWrap(True)
-            # self.live_EPG_info.setTextElideMode(Qt.ElideLeft)
+    def ProcessEPGData(self, epg_data):
+        try:
+            #Clear EPG data
+            self.live_EPG_info.clear()
+
+            #Check if EPG data is empty
+            if not epg_data:
+                item = QTreeWidgetItem(["??-??-????", "??:??", "??:??", "No EPG Data Available..."])
+
+                self.live_EPG_info.addTopLevelItem(item)
+
+                self.set_progress_bar(100, "No EPG data")
+                return
 
             #Get current time
             current_timestamp = time.mktime(datetime.now().timetuple())
-            # day     = current_timestamp.day 
-            # month   = current_timestamp.month 
-            # year    = current_timestamp.year 
-            # hour    = current_timestamp.hour 
-            # minute  = current_timestamp.minute
-
-            closest_idx = 0
-            min_time_diff = 2**31 - 1
-
-            # for item in self.live_EPG_info:
-            #     print(item)
-            self.live_EPG_info.clear()
 
             items = []
 
-            for idx, epg_entry in enumerate(epg_data):
-                # print(epg_entry)
-                start_timestamp      = epg_entry['start_time']
-                stop_timestamp       = epg_entry['stop_time']
+            #Loop through EPG data
+            for epg_entry in epg_data:
+                #Get EPG data
+                start_timestamp = epg_entry['start_time']
+                stop_timestamp  = epg_entry['stop_time']
                 program_name    = epg_entry['program_name']
                 description     = epg_entry['description']
                 date            = epg_entry['date']
 
+                #Convert timestamps to string in correct format
                 start_time = start_timestamp.strftime("%H:%M")
                 stop_time = stop_timestamp.strftime("%H:%M")
 
+                #Convert stop time to unix timebase so it can be used for calculating
                 unix_stop_time = time.mktime(stop_timestamp.timetuple())
-                # print(unix_start_time - current_timestamp)
 
-                # abs_time_diff = abs(unix_stop_time - current_timestamp)
+                #Compute time difference
                 time_diff = unix_stop_time - current_timestamp
-                # print(abs_time_diff)
 
-                # if abs_time_diff < min_time_diff:
-                if time_diff < 0:
-                    pass
-                    # min_time_diff = abs_time_diff
-                    # closest_idx = idx
-                else:
-                # time_diff = start_timestamp - current_timestamp
-                # if time_diff.day == 0:
-                #     pass
-
+                if time_diff >= 0:
                     #Create EPG item
                     item    = QTreeWidgetItem([date, start_time, stop_time, program_name])
                     label   = QLabel(description)
@@ -1343,20 +1311,17 @@ class IPTVPlayerApp(QMainWindow):
                     desc    = QTreeWidgetItem()
                     item.addChild(desc)
 
-                    # items.append(item)
-                    self.live_EPG_info.addTopLevelItem(item)
+                    #Add label widget to description. This way it is word wrapped correctly
                     self.live_EPG_info.setItemWidget(desc, 3, label)
 
-            # found_item = self.live_EPG_info.itemAt(0, closest_idx)
+                    #Append item to list
+                    items.append(item)
 
-            # print(f"closest idx: {closest_idx}, time diff: {min_time_diff}")
-            # print(found_item.text(0))
-            # print(found_item.text(1))
-            # print(found_item.text(3))
-            # self.live_EPG_info.scrollToItem(found_item)
+            #Add all items to EPG treeview
+            self.live_EPG_info.addTopLevelItems(items)
 
-            # self.live_EPG_info.scrollContentsBy(closest_idx, 0)
-            # vert_scroll = self.live_EPG_info.verticalScrollBar()
+            #Update progress bar
+            self.set_progress_bar(100, "Loaded EPG data")
 
         except Exception as e:
             print(f"Failed processing EPG: {e}")
@@ -1385,6 +1350,16 @@ class IPTVPlayerApp(QMainWindow):
 
                     if stream_type == 'live':
                         print(f"Starting EPG worker: {selected_item_data['stream_id']}")
+                        self.set_progress_bar(0, "Loading EPG data")
+
+                        #Set TV channel name in info window
+                        self.EPG_box_label.setText(f"{selected_item_data['name']}")
+
+                        #Clear EPG data
+                        self.live_EPG_info.clear()
+                        item = QTreeWidgetItem(["...", "...", "...", "Loading EPG Data..."])
+                        self.live_EPG_info.addTopLevelItem(item)
+
                         self.startEPGWorker(selected_item_data['stream_id'])
 
                     elif stream_type == 'movie':
