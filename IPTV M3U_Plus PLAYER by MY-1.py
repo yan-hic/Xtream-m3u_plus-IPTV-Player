@@ -12,7 +12,7 @@ from lxml import etree, html
 from datetime import datetime
 from dateutil import parser, tz
 import xml.etree.ElementTree as ET
-from PyQt5.QtGui import QIcon, QFont, QImage, QPixmap
+from PyQt5.QtGui import QIcon, QFont, QImage, QPixmap, QColor
 from PyQt5.QtCore import (
     Qt, QTimer, QPropertyAnimation, QEasingCurve, QSize, QObject, pyqtSignal, 
     QRunnable, pyqtSlot, QThreadPool, QModelIndex, QAbstractItemModel, QVariant
@@ -26,320 +26,13 @@ from PyQt5.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QTreeView
 )
 
-import threading
-import base64
+from CustomPyQtWidgets import EntryInfoBox
+from Threadpools import FetchDataWorker, SearchWorker, EPGWorker
 
 CUSTOM_USER_AGENT = (
     "Connection: Keep-Alive User-Agent: okhttp/5.0.0-alpha.2 "
     "Accept-Encoding: gzip, deflate"
 )
-
-def normalize_channel_name(name):
-    name = name.lower().strip()
-    name = re.sub(r'\s+', ' ', name)
-    name = re.sub(r'[^\w\s]', '', name)
-    name = re.sub(r'\b(hd|sd|channel|tv)\b', '', name)
-    name = name.strip()
-    return name
-
-class FetchDataWorkerSignals(QObject):
-    finished        = pyqtSignal(dict, dict, dict)
-    error           = pyqtSignal(str)
-    progress_bar    = pyqtSignal(int, int, str)
-
-class FetchDataWorker(QRunnable):
-    def __init__(self, server, username, password, http_method):
-        super().__init__()
-        self.server = server
-        self.username = username
-        self.password = password
-        # self.http_method = http_method
-        self.signals = FetchDataWorkerSignals()
-
-    @pyqtSlot()
-    def run(self):
-        try:
-            categories_per_stream_type = {
-                'LIVE': [],
-                'Movies': [],
-                'Series': []
-            }
-            entries_per_stream_type = {
-                'LIVE': [],
-                'Movies': [],
-                'Series': []
-            }
-
-            headers = {'User-Agent': CUSTOM_USER_AGENT}
-            params = {
-                'username': self.username,
-                'password': self.password,
-                'action': ''
-            }
-
-            host_url = f"{self.server}/player_api.php"
-
-            print("Going to receive data")
-
-            #Get IPTV info
-            self.signals.progress_bar.emit(0, 5, "Fetching IPTV info")
-            try:
-                iptv_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-                # iptv_info_resp.raise_for_status()
-                iptv_info_data = iptv_info_resp.json()
-            except Exception as e:
-                print(f"failed fetching IPTV data: {e}")
-
-            #Load cached data
-            print("Loading cached data")
-            cached_data = {}
-
-            cache_path = path.join(path.dirname(path.abspath(__file__)), "all_cached_data.json")
-            #Check if cache file exists
-            if path.isfile(cache_path):
-                print("cache file is there")
-                with open("all_cached_data.json", 'r') as cache_file:
-                    cached_data = json.load(cache_file)
-
-            categories_per_stream_type['LIVE'] = cached_data['LIVE categories']
-            categories_per_stream_type['Movies'] = cached_data['Movies categories']
-            categories_per_stream_type['Series'] = cached_data['Series categories']
-            entries_per_stream_type['LIVE'] = cached_data['LIVE']
-            entries_per_stream_type['Movies'] = cached_data['Movies']
-            entries_per_stream_type['Series'] = cached_data['Series']
-
-            #Uncomment this
-            # #Get all category data
-            # print("Fetching categories")
-            # self.signals.progress_bar.emit(5, 10, "Fetching LIVE Categories")
-            # try:
-            #     params['action'] = 'get_live_categories'
-            #     live_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-            #     # print(live_category_resp.raise_for_status())
-
-            #     categories_per_stream_type['LIVE'] = live_category_resp.json()
-            # except Exception as e:
-            #     print(f"failed fetching LIVE categories: {e}")
-
-            #     if cached_data.get('LIVE categories', 0):
-            #         print("Getting LIVE categories from cache")
-            #         categories_per_stream_type['LIVE'] = cached_data['LIVE categories']
-
-            # self.signals.progress_bar.emit(10, 20, "Fetching VOD Categories")
-            # try:
-            #     params['action'] = 'get_vod_categories'
-            #     movies_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-            #     # print(movies_category_resp.raise_for_status())
-
-            #     categories_per_stream_type['Movies'] = movies_category_resp.json()
-            # except Exception as e:
-            #     print(f"failed fetching VOD categories: {e}")
-
-            #     if cached_data.get('Movies categories', 0):
-            #         print("Getting Movies categories from cache")
-            #         categories_per_stream_type['Movies'] = cached_data['Movies categories']
-
-            # self.signals.progress_bar.emit(20, 30, "Fetching Series Categories")
-            # try:
-            #     params['action'] = 'get_series_categories'
-            #     series_category_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-            #     # print(series_category_resp.raise_for_status())
-
-            #     categories_per_stream_type['Series'] = series_category_resp.json()
-            # except Exception as e:
-            #     print(f"failed fetching Series categories: {e}")
-
-            #     if cached_data.get('Series categories', 0):
-            #         print("Getting Series categories from cache")
-            #         categories_per_stream_type['Series'] = cached_data['Series categories']
-
-            # print("Fetching streaming data")
-            # #Get all streaming data
-            # self.signals.progress_bar.emit(30, 40, "Fetching LIVE Streaming data")
-            # try:
-            #     params['action'] = 'get_live_streams'
-            #     live_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-            #     # print(live_streams_resp.raise_for_status())
-
-            #     entries_per_stream_type['LIVE'] = live_streams_resp.json()
-            # except Exception as e:
-            #     print(f"failed fetching LIVE streams: {e}")
-
-            #     if cached_data.get('LIVE', 0):
-            #         print("Getting LIVE streams from cache")
-            #         entries_per_stream_type['LIVE'] = cached_data['LIVE']
-
-            # self.signals.progress_bar.emit(40, 60, "Fetching VOD Streaming data")
-            # try:
-            #     params['action'] = 'get_vod_streams'
-            #     movies_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-            #     # print(movies_streams_resp.raise_for_status())
-
-            #     entries_per_stream_type['Movies'] = movies_streams_resp.json()
-            # except Exception as e:
-            #     print(f"failed fetching VOD streams: {e}")
-
-            #     if cached_data.get('Movies', 0):
-            #         print("Getting Movies streams from cache")
-            #         entries_per_stream_type['Movies'] = cached_data['Movies']
-
-            # self.signals.progress_bar.emit(60, 80, "Fetching Series Streaming data")
-            # try:
-            #     params['action'] = 'get_series'
-            #     series_streams_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-            #     # print(series_streams_resp.raise_for_status())
-
-            #     entries_per_stream_type['Series'] = series_streams_resp.json()
-            # except Exception as e:
-            #     print(f"failed fetching Series streams: {e}")
-
-            #     if cached_data.get('Series', 0):
-            #         print("Getting Series streams from cache")
-            #         entries_per_stream_type['Series'] = cached_data['Series']
-
-            # all_cached_data = json.dumps({
-            #         'LIVE categories': categories_per_stream_type['LIVE'],
-            #         'Movies categories': categories_per_stream_type['Movies'],
-            #         'Series categories': categories_per_stream_type['Series'],
-            #         'LIVE': entries_per_stream_type['LIVE'],
-            #         'Movies': entries_per_stream_type['Movies'],
-            #         'Series': entries_per_stream_type['Series']
-            #     }, 
-            #     indent=4)
-
-            # with open("all_cached_data.json", 'w') as cache_file:
-            #     cache_file.write(all_cached_data)
-
-            #TODO Fetch EPG data
-
-            # self.set_progress_bar(100, "Finished loading data")
-            self.signals.progress_bar.emit(80, 100, "Finished Fetching data")
-
-            print("setting url in streaming data")
-            #Make streaming URL in each entry except for the series
-            for tab_name in entries_per_stream_type.keys():
-                for idx, entry in enumerate(entries_per_stream_type[tab_name]):
-                    stream_type         = entry.get('stream_type', 'series')
-                    stream_id           = entry.get("stream_id")
-                    container_extension = entry.get("container_extension", "m3u8")
-                    if stream_id:
-                        entries_per_stream_type[tab_name][idx]["url"] = f"{self.server}/{stream_type}/{self.username}/{self.password}/{stream_id}.{container_extension}"
-                    else:
-                        entries_per_stream_type[tab_name][idx]["url"] = None
-
-                    if stream_type == 'series':
-                        entries_per_stream_type[tab_name][idx]["stream_type"] = stream_type
-
-            # for entry in entries_per_stream_type['Movies']:
-            #     if (entry['name'].find("Sonic") >= 0):
-            #         print(f"Movie name: {entry['name']}")
-
-            #         cat_id = entry['category_id']
-            #         for category in categories_per_stream_type['Movies']:
-            #             if category['category_id'] == cat_id:
-            #                 print(f"Category name: {category['category_name']}")
-
-            self.signals.finished.emit(iptv_info_data, categories_per_stream_type, entries_per_stream_type)
-
-            print("finished")
-
-        except Exception as e:
-            print(f"Exception! {e}")
-            self.signals.error.emit(str(e))
-
-class SearchWorkerSignals(QObject):
-    list_widget = pyqtSignal(list, str)
-    error = pyqtSignal(str)
-
-class SearchWorker(QRunnable):
-    def __init__(self, stream_type, currently_loaded_entries, list_widgets, text):
-        super().__init__()
-        self.stream_type = stream_type
-        self.currently_loaded_entries = currently_loaded_entries[0]
-        self.list_widgets = list_widgets[0]
-        self.text = text
-
-        self.signals = SearchWorkerSignals()
-
-        # self.setAutoDelete(True)
-
-    @pyqtSlot()
-    def run(self):
-        try:
-            self.list_widgets[self.stream_type].clear()
-            print("starting searching through entries")
-
-            for entry in self.currently_loaded_entries[self.stream_type]:
-                if self.text.lower() in entry['name'].lower():
-                    item = QListWidgetItem(entry['name'])
-                    item.setData(Qt.UserRole, entry)
-
-                    self.list_widgets[self.stream_type].addItem(item)
-
-                    print(entry['name'])
-
-            self.signals.list_widget.emit([self.list_widgets[self.stream_type]], self.stream_type)
-        except Exception as e:
-            print(f"failed search worker: {e}")
-
-class EPGWorkerSignals(QObject):
-    finished = pyqtSignal(list)
-    error = pyqtSignal(str)
-
-class EPGWorker(QRunnable):
-    def __init__(self, server, username, password, stream_id):
-        super().__init__()
-        self.server = server
-        self.username = username
-        self.password = password
-        self.stream_id = stream_id
-        self.signals = EPGWorkerSignals()
-
-    @pyqtSlot()
-    def run(self):
-        try:
-            #Creating url for requesting EPG data for specific stream
-            epg_url = f"{self.server}/player_api.php?username={self.username}&password={self.password}&action=get_simple_data_table&stream_id={self.stream_id}"
-            headers = {'User-Agent': CUSTOM_USER_AGENT}
-
-            #Requesting EPG data
-            response = requests.get(epg_url, headers=headers, timeout=10)
-            epg_data = response.json()
-
-            #Decrypt EPG data with base 64
-            decrypted_epg_data = self.decryptEPGData(epg_data)
-
-            self.signals.finished.emit(decrypted_epg_data)
-        except Exception as e:
-            self.signals.error.emit(str(e))
-
-    def decryptEPGData(self, epg_data):
-        try:
-            decrypted_epg_data = []
-
-            for epg_entry in epg_data['epg_listings']:
-                #Get start, stop time and date
-                start_timestamp = datetime.fromtimestamp(int(epg_entry['start_timestamp']))
-                stop_timestamp  = datetime.fromtimestamp(int(epg_entry['stop_timestamp']))
-                date            = f"{start_timestamp.day:02}-{start_timestamp.month:02}-{start_timestamp.year}"
-
-                #Decode program name and descryption
-                program_name        = base64.b64decode(epg_entry['title']).decode("utf-8")
-                program_description = base64.b64decode(epg_entry['description']).decode("utf-8")
-
-                #Put only necessary EPG data in list
-                decrypted_epg_data.append({
-                    'start_time': start_timestamp,
-                    'stop_time': stop_timestamp,
-                    'program_name': program_name,
-                    'description': program_description,
-                    'date': date
-                    })
-
-            #return decrypted EPG data
-            return decrypted_epg_data
-        except Exception as e:
-            print(f"failed decrypting: {e}")
 
 class AddressBookDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
@@ -588,11 +281,11 @@ class IPTVPlayerApp(QMainWindow):
         self.password               = ""
         self.login_type             = None
 
-        self.epg_data               = {}  
-        self.channel_id_to_names    = {}  
-        self.epg_last_updated       = None  
-        self.epg_id_mapping         = {}
-        self.epg_name_map           = {}
+        # self.epg_data               = {}  
+        # self.channel_id_to_names    = {}  
+        # self.epg_last_updated       = None  
+        # self.epg_id_mapping         = {}
+        # self.epg_name_map           = {}
 
         #Create threadpool
         self.threadpool = QThreadPool()
@@ -620,13 +313,16 @@ class IPTVPlayerApp(QMainWindow):
         self.live_tab_layout.addWidget(self.channel_list_live, 1, 1)
         self.live_tab_layout.addWidget(self.live_EPG_info_box, 1, 2)
 
-        self.movies_tab_layout.addWidget(self.search_bar_movies, 0, 0, 1, 2)
+        self.movies_tab_layout.addWidget(self.search_bar_movies, 0, 0, 1, 3)
         self.movies_tab_layout.addWidget(self.category_list_movies, 1, 0)
         self.movies_tab_layout.addWidget(self.channel_list_movies, 1, 1)
+        # self.movies_tab_layout.addWidget(self.movies_info_box, 1, 2)
+        self.movies_tab_layout.addWidget(self.movies_info_text, 1, 2)
 
-        self.series_tab_layout.addWidget(self.search_bar_series, 0, 0, 1, 2)
+        self.series_tab_layout.addWidget(self.search_bar_series, 0, 0, 1, 3)
         self.series_tab_layout.addWidget(self.category_list_series, 1, 0)
         self.series_tab_layout.addWidget(self.channel_list_series, 1, 1)
+        self.series_tab_layout.addWidget(self.series_info_box, 1, 2)
         
         self.info_tab_layout.addWidget(self.iptv_info_text)
 
@@ -745,9 +441,12 @@ class IPTVPlayerApp(QMainWindow):
 
         #Connect functions to entry list events
         self.channel_list_live.itemDoubleClicked.connect(self.streaming_item_double_clicked)
-        self.channel_list_live.itemClicked.connect(self.streaming_item_clicked)
         self.channel_list_movies.itemDoubleClicked.connect(self.streaming_item_double_clicked)
         self.channel_list_series.itemDoubleClicked.connect(self.streaming_item_double_clicked)
+
+        self.channel_list_live.itemClicked.connect(self.streaming_item_clicked)
+        self.channel_list_movies.itemClicked.connect(self.streaming_item_clicked)
+        self.channel_list_series.itemClicked.connect(self.streaming_item_clicked)
 
         #Put entry lists in list
         self.list_widgets = {
@@ -790,8 +489,9 @@ class IPTVPlayerApp(QMainWindow):
                 }
             """)
 
-        self.live_EPG_info_box      = QWidget()
-        self.live_EPG_info_layout   = QVBoxLayout(self.live_EPG_info_box)
+        #Create LIVE TV info box
+        self.live_EPG_info_box          = QWidget()
+        self.live_EPG_info_box_layout   = QVBoxLayout(self.live_EPG_info_box)
 
         #Create Live TV Channel name label
         self.EPG_box_label = QLabel("Select channel to view Live TV info")
@@ -808,8 +508,50 @@ class IPTVPlayerApp(QMainWindow):
         self.live_EPG_info.setColumnWidth(2, 50)
 
         #Add TV channel label and EPG data to info box
-        self.live_EPG_info_layout.addWidget(self.EPG_box_label)
-        self.live_EPG_info_layout.addWidget(self.live_EPG_info)
+        self.live_EPG_info_box_layout.addWidget(self.EPG_box_label)
+        self.live_EPG_info_box_layout.addWidget(self.live_EPG_info)
+
+        #Create Movies and Series info box
+        self.movies_info_box = QWidget()
+        self.series_info_box = QWidget()
+
+        #Create grid layout for info boxes
+        self.movies_info_box_layout = QGridLayout(self.movies_info_box)
+        self.series_info_box_layout = QGridLayout(self.series_info_box)
+
+        self.movies_info_text = EntryInfoBox()
+        self.movies_info_text.name.setText("Harry Potter")
+        # self.movies_info_text   = QTextEdit()
+        # self.movies_info_text.setReadOnly(True)
+
+        # movies_info_string = (
+        #     f"Name: {0}\n"
+        #     f"Release data: {0}\n"
+        #     f"Country: {0}\n"
+        #     f"Genre: {0}\n"
+        #     f"Duration: {0}\n"
+        #     f"Rating: {0}\n"
+        #     f""
+        #     "\n"
+        #     f"Director: {0}\n"
+        #     f"Cast: {0}\n"
+        #     f"Description: {0}\n"
+        #     f"Plot: {0}\n"
+        # )
+
+        # self.movies_info_text.setText(movies_info_string)
+
+        # editor = self.movies_info_text
+        # cursor = editor.textCursor()
+        # fmt = cursor.charFormat()
+        # fmt.setForeground(QColor('blue'))
+        # address = 'http://youtube.com'
+        # fmt.setAnchor(True)
+        # fmt.setAnchorHref(address)
+        # fmt.setToolTip(address)
+        # cursor.insertText("Watch Trailer", fmt)
+
+        self.movies_info_box_layout.addWidget(self.movies_info_text)
 
     def initSettingsTab(self):
         #Create items in settings tab
@@ -877,16 +619,16 @@ class IPTVPlayerApp(QMainWindow):
         # checkbox_layout.setAlignment(Qt.AlignRight)
         # checkbox_layout.setSpacing(15)
 
-        self.http_method_checkbox = QCheckBox("Use POST Method")
-        self.http_method_checkbox.setToolTip("Check to use POST instead of GET for server requests")
+        # self.http_method_checkbox = QCheckBox("Use POST Method")
+        # self.http_method_checkbox.setToolTip("Check to use POST instead of GET for server requests")
 
         self.keep_on_top_checkbox = QCheckBox("Keep on top")
         self.keep_on_top_checkbox.setToolTip("Keep the application on top of all windows")
         self.keep_on_top_checkbox.stateChanged.connect(self.toggle_keep_on_top)
 
-        self.epg_checkbox = QCheckBox("Download EPG")
-        self.epg_checkbox.setToolTip("Check to download EPG data for channels")
-        self.epg_checkbox.stateChanged.connect(self.on_epg_checkbox_toggled)
+        # self.epg_checkbox = QCheckBox("Download EPG")
+        # self.epg_checkbox.setToolTip("Check to download EPG data for channels")
+        # self.epg_checkbox.stateChanged.connect(self.on_epg_checkbox_toggled)
 
         self.font_size_label = QLabel("Font Size:")
         self.font_size_spinbox = QSpinBox()
@@ -896,9 +638,9 @@ class IPTVPlayerApp(QMainWindow):
         self.font_size_spinbox.valueChanged.connect(self.update_font_size)
         self.font_size_spinbox.setFixedWidth(60)
 
-        checkbox_layout.addWidget(self.http_method_checkbox)
+        # checkbox_layout.addWidget(self.http_method_checkbox)
         checkbox_layout.addWidget(self.keep_on_top_checkbox)
-        checkbox_layout.addWidget(self.epg_checkbox)
+        # checkbox_layout.addWidget(self.epg_checkbox)
 
         fontbox_layout = QHBoxLayout()
         fontbox_layout.setAlignment(Qt.AlignLeft)
@@ -960,15 +702,15 @@ class IPTVPlayerApp(QMainWindow):
             self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
         self.show()
 
-    def get_http_method(self):
-        return 'POST' if self.http_method_checkbox.isChecked() else 'GET'
+    # def get_http_method(self):
+    #     return 'POST' if self.http_method_checkbox.isChecked() else 'GET'
 
-    def make_request(self, method, url, params=None, timeout=10):
-        headers = {'User-Agent': CUSTOM_USER_AGENT}
-        if method == 'POST':
-            return requests.post(url, data=params, headers=headers, timeout=timeout)
-        else:
-            return requests.get(url, params=params, headers=headers, timeout=timeout)
+    # def make_request(self, method, url, params=None, timeout=10):
+    #     headers = {'User-Agent': CUSTOM_USER_AGENT}
+    #     if method == 'POST':
+    #         return requests.post(url, data=params, headers=headers, timeout=timeout)
+    #     else:
+    #         return requests.get(url, params=params, headers=headers, timeout=timeout)
 
     def open_m3u_plus_dialog(self):
         text, ok = QtWidgets.QInputDialog.getText(self, 'M3u_plus Login', 'Enter m3u_plus URL:')
@@ -1025,32 +767,33 @@ class IPTVPlayerApp(QMainWindow):
         self.playlist_progress_animation.start()
         QtWidgets.qApp.processEvents()
 
-    def reset_progress_bar(self):
-        self.playlist_progress_animation.stop()
-        self.progress_bar.setValue(0)
-        self.set_progress_text("")
+    # def reset_progress_bar(self):
+    #     self.playlist_progress_animation.stop()
+    #     self.progress_bar.setValue(0)
+    #     self.set_progress_text("")
 
     def login(self):
         # When logging into another server, reset the progress bar
-        self.reset_progress_bar()
-        self.epg_data = {}
-        self.channel_id_to_names = {}
-        self.epg_last_updated = None
+        # self.reset_progress_bar()
+        self.set_progress_bar(0, "Logging in...")
+        # self.epg_data = {}
+        # self.channel_id_to_names = {}
+        # self.epg_last_updated = None
         for tab_name, list_widget in self.list_widgets.items():
             list_widget.clear()
 
         for tab_name, list_widget in self.category_list_widgets.items():
             list_widget.clear()
 
-        cache_file = 'epg_cache1.xml'
-        if os.path.exists(cache_file):
-            try:
-                os.remove(cache_file)
-            except Exception as e:
-                print(f"Error deleting EPG cache: {e}")
-                # self.animate_progress(0, 100, "Error deleting EPG cache")
-                self.set_progress_bar(100, "Error deleting EPG cache")
-                return
+        # cache_file = 'epg_cache1.xml'
+        # if os.path.exists(cache_file):
+        #     try:
+        #         os.remove(cache_file)
+        #     except Exception as e:
+        #         print(f"Error deleting EPG cache: {e}")
+        #         # self.animate_progress(0, 100, "Error deleting EPG cache")
+        #         self.set_progress_bar(100, "Error deleting EPG cache")
+        #         return
 
         self.server = self.server_entry.text().strip()
         self.username = self.username_entry.text().strip()
@@ -1082,9 +825,10 @@ class IPTVPlayerApp(QMainWindow):
         # self.fetch_all_data(self.server, self.username, self.password)
         self.fetch_data_thread(self.server, self.username, self.password)
 
+        self.set_progress_bar(0, "Going to fetch data...")
+
     def fetch_data_thread(self, server, username, password):
-        http_method = self.get_http_method()
-        dataWorker = FetchDataWorker(self.server, self.username, self.password, http_method)
+        dataWorker = FetchDataWorker(self.server, self.username, self.password)
         dataWorker.signals.finished.connect(self.process_data)
         dataWorker.signals.error.connect(self.on_fetch_data_error)
         dataWorker.signals.progress_bar.connect(self.animate_progress)
@@ -1094,6 +838,8 @@ class IPTVPlayerApp(QMainWindow):
         self.categories_per_stream_type = categories
         self.entries_per_stream_type = entries_per_stream_type
         # print(self.entries_per_stream_type['LIVE'])
+
+        self.set_progress_bar(0, "Processing received data...")
 
         #Process IPTV info
         user_info   = iptv_info.get("user_info", {})
@@ -1194,12 +940,82 @@ class IPTVPlayerApp(QMainWindow):
 
     def on_fetch_data_error(self, error_msg):
         print(f"Error occurred while fetching data: {error_msg}")
+        self.set_progress_bar(100, "Failed fetching data")
 
     def fetch_vod_info(self, vod_id):
-        return
+        try:
+            #Set request parameters
+            headers = {'User-Agent': CUSTOM_USER_AGENT}
+            host_url = f"{self.server}/player_api.php"
+            params = {
+                'username': self.username,
+                'password': self.password,
+                'action': 'get_vod_info',
+                'vod_id': vod_id
+            }
+
+            #Request series info
+            vod_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+
+            # print(vod_info_resp.json())
+
+            #Return series info data
+            return vod_info_resp.json()
+        except Exception as e:
+            print(f"Failed fetching movie info: {e}")
+            return {}
 
     def fetch_series_info(self, series_id):
-        return
+        try:
+            #Set request parameters
+            headers = {'User-Agent': CUSTOM_USER_AGENT}
+            host_url = f"{self.server}/player_api.php"
+            params = {
+                'username': self.username,
+                'password': self.password,
+                'action': 'get_series_info',
+                'series_id': series_id
+            }
+
+            #Request series info
+            series_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+
+            #Return series info data
+            return series_info_resp.json()
+        except Exception as e:
+            print(f"Failed fetching series info: {e}")
+            return {}
+
+    def fetch_image(self, img_url):
+        try:
+            #Set header for request
+            headers = {'User-Agent': CUSTOM_USER_AGENT}
+
+            print(img_url)
+
+            #Request image
+            image_resp = requests.get(img_url, headers=headers, timeout=10)
+
+            # if (image_resp.content.find(("404 Not Found").encode("utf-8")) >= 0):
+            # if image_resp.content.find(b'Invalid URL') >= 0 or image_resp.content.find(b'404 Not Found') >= 0:
+            resp_status = image_resp.status_code
+
+            if resp_status == 404:
+                print("404 Not found")
+                image = QPixmap('Images/404_not_found.png')
+            elif not resp_status == 200:
+                print("Image request not ok")
+                image = QPixmap('Images/no_image.jpg')
+            else:
+                #Create QPixmap from image data
+                image = QPixmap()
+                image.loadFromData(image_resp.content)
+
+            #Return series info data
+            return image
+        except Exception as e:
+            print(f"Failed fetching image: {e}")
+            return QPixmap('Images/No-Image-Placeholder.svg')
 
     def category_item_clicked(self, clicked_item):
         try:
@@ -1363,8 +1179,70 @@ class IPTVPlayerApp(QMainWindow):
                         self.startEPGWorker(selected_item_data['stream_id'])
 
                     elif stream_type == 'movie':
-                        # self.play_item(selected_item_data['url'])
-                        pass
+                        self.set_progress_bar(0, "Loading Movie info")
+
+                        vod_info = self.fetch_vod_info(selected_item_data['stream_id'])
+                        # print(vod_info)
+
+                        info = vod_info['info']
+
+                        if not info:
+                            info = {}
+
+                        movie_img_url = info.get('movie_image', 0)
+                        if movie_img_url:
+                            movie_image = self.fetch_image(movie_img_url)
+                        else:
+                            movie_image = QPixmap('Images/no_image.jpg')
+
+                        # if not movie_image:
+                        #     print("no image available")
+                        #     #If no image available, set no-image placeholder image
+                        #     self.movies_info_text.cover.setPixmap('Images/No-Image-Placeholder.svg')
+                        # else:
+                        #Set cover to movie image
+                        # movie_image.scaledToWidth(self.movies_info_text.maxCoverWidth)
+                        self.movies_info_text.cover.setPixmap(movie_image.scaledToWidth(self.movies_info_text.maxCoverWidth))
+                        
+                        print(f"VOD info name: {info.get('name', 0)}")
+
+                        if vod_info['movie_data']:
+                            print(f"VOD movie name: {vod_info['movie_data'].get('name', 0)}")
+                            movie_name = info.get('name', vod_info['movie_data'].get('name', 'No name Available...'))
+
+                            #If movie name is an empty string
+                            if not movie_name:
+                                movie_name = vod_info['movie_data'].get('name', 'No name Available...')
+
+                                #Check again if movie name is an empty string
+                                if not movie_name:
+                                    movie_name = 'No name Available...'
+                        else:
+                            movie_name = info.get('name', 'No name Available...')
+
+
+                        # self.movies_info_text.name.setText(info.get('name', vod_info['movie_data'].get('name', 'No name Available...')))
+                        # if not type(movie_name) == str:
+                        #     movie_name = 'No name Available...'
+
+                        self.movies_info_text.name.setText(f"{movie_name}")
+                        self.movies_info_text.release_date.setText(f"Release date: {info.get('releasedate', '??-??-????')}")
+                        self.movies_info_text.country.setText(f"Country: {info.get('country', '?')}")
+                        self.movies_info_text.genre.setText(f"Genre: {info.get('genre', '?')}")
+                        self.movies_info_text.duration.setText(f"Duration: {info.get('duration', '??:??:??')}")
+                        self.movies_info_text.rating.setText(f"Rating: {info.get('rating', '?')}")
+                        self.movies_info_text.director.setText(f"Director: {info.get('director', 'director: ?')}")
+                        self.movies_info_text.cast.setText(f"Cast: {info.get('actors', 'actors: ?')}")
+                        self.movies_info_text.description.setText(f"Description: {info.get('description', 'description: ?')}")
+                        self.movies_info_text.plot.setText(f"Plot: {info.get('plot', 'plot: ?')}")
+                        self.movies_info_text.trailer.setText(f"Trailer: {info.get('youtube_trailer', '?')}")
+                        self.movies_info_text.imdb.setText(f"TMBD: {info.get('tmdb_id', '?')}")
+
+                        if not info:
+                            print(f"VOD info was empty: {info}")
+                            self.set_progress_bar(100, "Failed loading Movie info")
+                        else:
+                            self.set_progress_bar(100, "Loaded Movie info")
 
                     elif stream_type == 'series':
                         # self.series_navigation_level = 1
@@ -1461,20 +1339,27 @@ class IPTVPlayerApp(QMainWindow):
     def show_seasons(self, seasons_data):
         self.set_progress_bar(0, "Loading items")
 
-        #Fetch series info
-        headers = {'User-Agent': CUSTOM_USER_AGENT}
-        host_url = f"{self.server}/player_api.php"
-        params = {
-            'username': self.username,
-            'password': self.password,
-            'action': 'get_series_info',
-            'series_id': seasons_data['series_id']
-        }
+        # #Fetch series info
+        # headers = {'User-Agent': CUSTOM_USER_AGENT}
+        # host_url = f"{self.server}/player_api.php"
+        # params = {
+        #     'username': self.username,
+        #     'password': self.password,
+        #     'action': 'get_series_info',
+        #     'series_id': seasons_data['series_id']
+        # }
 
-        series_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-        series_info_resp.raise_for_status()
+        # #Request series info
+        # series_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+        # series_info_resp.raise_for_status()
 
-        self.series_info_data = series_info_resp.json()
+        # self.series_info_data = series_info_resp.json()
+
+        series_info_data = self.fetch_series_info(seasons_data['series_id'])
+
+        if not series_info_data:
+            self.animate_progress(0, 100, "Failed fetching series info")
+            return
 
         #Show seasons in list
         self.list_widgets['Series'].clear()
@@ -1482,11 +1367,14 @@ class IPTVPlayerApp(QMainWindow):
 
         self.list_widgets['Series'].addItem(self.go_back_text)
 
-        self.currently_loaded_entries['Seasons'] = self.series_info_data['episodes']
+        # self.currently_loaded_entries['Seasons'] = self.series_info_data['episodes']
+        self.currently_loaded_entries['Seasons'] = series_info_data['episodes']
 
-        for season in self.series_info_data['episodes'].keys():
+        # for season in self.series_info_data['episodes'].keys():
+        for season in series_info_data['episodes'].keys():
             item = QListWidgetItem(f"Season {season}")
-            item.setData(Qt.UserRole, self.series_info_data['episodes'][season])
+            # item.setData(Qt.UserRole, self.series_info_data['episodes'][season])
+            item.setData(Qt.UserRole, series_info_data['episodes'][season])
             # item.setIcon(channel_icon)
 
             # self.currently_loaded_entries['Seasons'].append(self.series_info_data['episodes'][season])
@@ -1533,35 +1421,35 @@ class IPTVPlayerApp(QMainWindow):
         else:
             self.animate_progress(0, 100, "No external player configured")
 
-    def load_epg_data_async(self):
-        if not self.server or not self.username or not self.password:
-            # Can't load EPG if not logged in
-            return
-        http_method = self.get_http_method()
-        epg_worker = EPGWorker(self.server, self.username, self.password, http_method)
-        epg_worker.signals.finished.connect(self.on_epg_loaded)
-        epg_worker.signals.error.connect(self.on_epg_error)
-        self.threadpool.start(epg_worker)
+    # def load_epg_data_async(self):
+    #     if not self.server or not self.username or not self.password:
+    #         # Can't load EPG if not logged in
+    #         return
+    #     http_method = self.get_http_method()
+    #     epg_worker = EPGWorker(self.server, self.username, self.password, http_method)
+    #     epg_worker.signals.finished.connect(self.on_epg_loaded)
+    #     epg_worker.signals.error.connect(self.on_epg_error)
+    #     self.threadpool.start(epg_worker)
 
-    def on_epg_loaded(self, epg_data, channel_id_to_names):
-        print("EPG data loaded, processing now...")
-        self.epg_data = epg_data
-        self.channel_id_to_names = channel_id_to_names
+    # def on_epg_loaded(self, epg_data, channel_id_to_names):
+    #     print("EPG data loaded, processing now...")
+    #     self.epg_data = epg_data
+    #     self.channel_id_to_names = channel_id_to_names
 
-        name_to_id = {}
-        for cid, names in channel_id_to_names.items():
-            for n in names:
-                if n not in name_to_id:
-                    name_to_id[n] = cid
-        self.epg_name_map = name_to_id
+    #     name_to_id = {}
+    #     for cid, names in channel_id_to_names.items():
+    #         for n in names:
+    #             if n not in name_to_id:
+    #                 name_to_id[n] = cid
+    #     self.epg_name_map = name_to_id
 
-        # EPG done
-        # self.animate_progress(self.progress_bar.value(), 100, "EPG data loaded")
-        self.set_progress_bar(100, "EPG Data Loaded")
+    #     # EPG done
+    #     # self.animate_progress(self.progress_bar.value(), 100, "EPG data loaded")
+    #     self.set_progress_bar(100, "EPG Data Loaded")
 
-    def on_epg_error(self, error_message):
-        print(f"Error fetching EPG data: {error_message}")
-        self.animate_progress(self.progress_bar.value(), 100, "Error fetching EPG data")
+    # def on_epg_error(self, error_message):
+    #     print(f"Error fetching EPG data: {error_message}")
+    #     self.animate_progress(self.progress_bar.value(), 100, "Error fetching EPG data")
 
     def choose_external_player(self):
         file_dialog = QFileDialog()
@@ -1578,14 +1466,14 @@ class IPTVPlayerApp(QMainWindow):
                 self.save_external_player_command()
                 print("External Player selected:", self.external_player_command)
 
-    def show_context_menu(self, position):
-        sender = self.sender()
-        menu = QMenu()
-        sort_action = QAction("Sort Alphabetically", self)
-        sort_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_ArrowUp))
-        sort_action.triggered.connect(lambda: self.sort_channel_list(sender))
-        menu.addAction(sort_action)
-        menu.exec_(sender.viewport().mapToGlobal(position))
+    # def show_context_menu(self, position):
+    #     sender = self.sender()
+    #     menu = QMenu()
+    #     sort_action = QAction("Sort Alphabetically", self)
+    #     sort_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_ArrowUp))
+    #     sort_action.triggered.connect(lambda: self.sort_channel_list(sender))
+    #     menu.addAction(sort_action)
+    #     menu.exec_(sender.viewport().mapToGlobal(position))
 
     def KeyPressed(self, e, search_bar, stream_type):
         search_history_size = len(self.search_history_list)
@@ -1653,14 +1541,14 @@ class IPTVPlayerApp(QMainWindow):
                 search_bar.insert(e.text())
                 # e.accept()
 
-    def update_list_after_search(self, list_widget, stream_type):
-        try:
-            print("emitted list widget")
-            # print(list_widget)
+    # def update_list_after_search(self, list_widget, stream_type):
+    #     try:
+    #         print("emitted list widget")
+    #         # print(list_widget)
 
-            self.list_widgets[stream_type] = list_widget[0]
-        except Exception as e:
-            print(f"update after search failed: {e}")
+    #         self.list_widgets[stream_type] = list_widget[0]
+    #     except Exception as e:
+    #         print(f"update after search failed: {e}")
 
     def search_in_list(self, stream_type, text):
         try:
@@ -1699,11 +1587,11 @@ class IPTVPlayerApp(QMainWindow):
         except Exception as e:
             print(f"search in list failed: {e}")
 
-    def get_list_widget(self, tab_name):
-        return self.list_widgets.get(tab_name)
+    # def get_list_widget(self, tab_name):
+    #     return self.list_widgets.get(tab_name)
 
-    def get_category_list_widget(self, tab_name):
-        return self.category_list_widgets.get(tab_name)
+    # def get_category_list_widget(self, tab_name):
+    #     return self.category_list_widgets.get(tab_name)
 
     def load_external_player_command(self):
         external_player_command = ""
@@ -1722,14 +1610,14 @@ class IPTVPlayerApp(QMainWindow):
         with open('config.ini', 'w') as config_file:
             config.write(config_file)
 
-    def on_epg_checkbox_toggled(self, state):
-        # If EPG is checked after we already logged in and no EPG data loaded, start it now.
-        if state == Qt.Checked:
-            if self.login_type == 'xtream' and self.server and self.username and self.password and not self.epg_data:
-                # Reset progress and load EPG
-                self.reset_progress_bar()
-                self.animate_progress(0, 50, "Loading EPG data...")
-                self.load_epg_data_async()
+    # def on_epg_checkbox_toggled(self, state):
+    #     # If EPG is checked after we already logged in and no EPG data loaded, start it now.
+    #     if state == Qt.Checked:
+    #         if self.login_type == 'xtream' and self.server and self.username and self.password and not self.epg_data:
+    #             # Reset progress and load EPG
+    #             self.reset_progress_bar()
+    #             self.animate_progress(0, 50, "Loading EPG data...")
+    #             self.load_epg_data_async()
 
     def open_address_book(self):
         dialog = AddressBookDialog(self)
@@ -1739,8 +1627,8 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     player = IPTVPlayerApp()
-    # player.show()
-    player.showMaximized()
+    player.show()
+    # player.showMaximized()
     QtWidgets.qApp.processEvents()
     player.load_data_startup()
     sys.exit(app.exec_())
