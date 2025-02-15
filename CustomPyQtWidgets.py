@@ -26,9 +26,6 @@ class MovieInfoBox(QScrollArea):
         self.layout = QGridLayout(self.widget)
         self.layout.setAlignment(Qt.AlignTop)
 
-        self.width = self.width()
-        print(self.width)
-
         self.maxCoverWidth = 200
 
         self.cover          = QLabel()
@@ -107,9 +104,6 @@ class SeriesInfoBox(QScrollArea):
         self.layout = QGridLayout(self.widget)
         self.layout.setAlignment(Qt.AlignTop)
 
-        self.width = self.width()
-        print(self.width)
-
         self.maxCoverWidth = 200
 
         self.cover          = QLabel()
@@ -135,6 +129,7 @@ class SeriesInfoBox(QScrollArea):
 
         self.name.setFont(QFont('Arial', 14, QFont.Bold))
 
+        #Enable wordwrap for all labels
         self.name.setWordWrap(True)
         self.release_date.setWordWrap(True)
         self.genre.setWordWrap(True)
@@ -147,6 +142,7 @@ class SeriesInfoBox(QScrollArea):
         self.trailer.setWordWrap(True)
         self.tmdb.setWordWrap(True)
 
+        #Add widgets
         self.layout.addWidget(self.name,            0, 0, 1, 2)
         self.layout.addWidget(self.cover,           1, 0, 10, 1)
         self.layout.addWidget(self.release_date,    1, 1)
@@ -160,18 +156,23 @@ class SeriesInfoBox(QScrollArea):
         self.layout.addWidget(self.trailer,         9, 1)
         self.layout.addWidget(self.tmdb,            10, 1)
 
+        #Add widget with all items to the scrollarea (self)
         self.setWidget(self.widget)
 
     def TrailerClicked(self, e):
+        #Get youtube code from text and append to url
         yt_code = self.trailer.text()[9:]
         yt_url = f"https://www.youtube.com/watch?v={yt_code}"
 
+        #Open URL
         QDesktopServices.openUrl(QUrl(yt_url))
 
     def TmdbClicked(self, e):
+        #Get TMDB code from text and append to url
         tmdb_code = self.tmdb.text()[6:]
         tmdb_url = f"https://www.themoviedb.org/tv/{tmdb_code}"
 
+        #Open URL
         QDesktopServices.openUrl(QUrl(tmdb_url))
 
 

@@ -26,226 +26,22 @@ from PyQt5.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QTreeView
 )
 
+from AccountManager import AccountManager
 from CustomPyQtWidgets import MovieInfoBox, SeriesInfoBox
-from Threadpools import FetchDataWorker, SearchWorker, EPGWorker
+from Threadpools import FetchDataWorker, SearchWorker, EPGWorker, MovieInfoFetcher, SeriesInfoFetcher
 
 CUSTOM_USER_AGENT = (
     "Connection: Keep-Alive User-Agent: okhttp/5.0.0-alpha.2 "
     "Accept-Encoding: gzip, deflate"
 )
 
-class AddressBookDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Address Book")
-        self.setMinimumSize(400, 300)
-        self.parent = parent
-
-        layout = QtWidgets.QVBoxLayout(self)
-
-        startup_credential_layout = QHBoxLayout()
-        self.startup_credential_label = QLabel("Startup address:")
-        self.startup_credential_options = QtWidgets.QComboBox()
-        self.startup_credential_options.currentTextChanged.connect(self.set_startup_credentials)
-        startup_credential_layout.addWidget(self.startup_credential_label)
-        startup_credential_layout.addWidget(self.startup_credential_options)
-        layout.addLayout(startup_credential_layout)
-
-        self.credentials_list = QtWidgets.QListWidget()
-        layout.addWidget(self.credentials_list)
-
-        button_layout = QHBoxLayout()
-        self.add_button = QPushButton("Add")
-        self.add_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogNewFolder))
-        self.select_button = QPushButton("Select")
-        self.select_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_DialogYesButton))
-        self.delete_button = QPushButton("Delete")
-        self.delete_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_DialogCancelButton))
-        button_layout.addWidget(self.add_button)
-        button_layout.addWidget(self.select_button)
-        button_layout.addWidget(self.delete_button)
-        layout.addLayout(button_layout)
-
-        self.load_saved_credentials()
-
-        self.add_button.clicked.connect(self.add_credentials)
-        self.select_button.clicked.connect(self.select_credentials)
-        self.delete_button.clicked.connect(self.delete_credentials)
-        self.credentials_list.itemDoubleClicked.connect(self.double_click_credentials)
-
-    def set_startup_credentials(self):
-        selected_item = self.startup_credential_options.currentText()
-
-        config = configparser.ConfigParser()
-        config.read('credentials.ini')
-
-        if 'Startup credentials' not in config:
-            config['Startup credentials'] = {}
-
-        config['Startup credentials']['startup_credentials'] = f"{selected_item}"
-
-        with open('credentials.ini', 'w') as config_file:
-            config.write(config_file)
-
-    def load_saved_credentials(self):
-        self.startup_credential_options.currentTextChanged.disconnect(self.set_startup_credentials)
-
-        self.credentials_list.clear()
-        self.startup_credential_options.clear()
-        self.startup_credential_options.addItem("None")
-
-        config = configparser.ConfigParser()
-        config.read('credentials.ini')
-
-        if 'Credentials' in config:
-            for key in config['Credentials']:
-                self.credentials_list.addItem(key)
-                self.startup_credential_options.addItem(key)
-
-        if 'Startup credentials' in config:
-            selected_startup_credentials = config['Startup credentials']['startup_credentials']
-            idx = self.startup_credential_options.findText(f"{selected_startup_credentials}")
-            self.startup_credential_options.setCurrentIndex(idx)
-
-        self.startup_credential_options.currentTextChanged.connect(self.set_startup_credentials)
-
-    def add_credentials(self):
-        dialog = AddCredentialsDialog(self)
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            method, name, *credentials = dialog.get_credentials()
-            if name:
-                config = configparser.ConfigParser()
-                config.read('credentials.ini')
-                if 'Credentials' not in config:
-                    config['Credentials'] = {}
-                if method == 'manual':
-                    server, username, password = credentials
-                    config['Credentials'][name] = f"manual|{server}|{username}|{password}"
-                elif method == 'm3u_plus':
-                    m3u_url, = credentials
-                    config['Credentials'][name] = f"m3u_plus|{m3u_url}"
-                with open('credentials.ini', 'w') as config_file:
-                    config.write(config_file)
-                self.load_saved_credentials()
-
-    def select_credentials(self):
-        selected_item = self.credentials_list.currentItem()
-        if selected_item:
-            name = selected_item.text()
-            config = configparser.ConfigParser()
-            config.read('credentials.ini')
-            if 'Credentials' in config and name in config['Credentials']:
-                data = config['Credentials'][name]
-                if data.startswith('manual|'):
-                    _, server, username, password = data.split('|')
-                    self.parent.server_entry.setText(server)
-                    self.parent.username_entry.setText(username)
-                    self.parent.password_entry.setText(password)
-                    self.parent.login()
-                elif data.startswith('m3u_plus|'):
-                    _, m3u_url = data.split('|', 1)
-                    self.parent.extract_credentials_from_m3u_plus_url(m3u_url)
-                    self.parent.login()
-                self.accept()
-
-    def double_click_credentials(self, item):
-        self.select_credentials()
-        self.accept()
-
-    def delete_credentials(self):
-        selected_item = self.credentials_list.currentItem()
-        if selected_item:
-            name = selected_item.text()
-            config = configparser.ConfigParser()
-            config.read('credentials.ini')
-            if 'Credentials' in config and name in config['Credentials']:
-                del config['Credentials'][name]
-                with open('credentials.ini', 'w') as config_file:
-                    config.write(config_file)
-                self.load_saved_credentials()
-
-class AddCredentialsDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Add Credentials")
-        layout = QtWidgets.QVBoxLayout(self)
-
-        self.method_selector = QtWidgets.QComboBox()
-        self.method_selector.addItems(["Manual Entry", "m3u_plus URL Entry"])
-        layout.addWidget(QtWidgets.QLabel("Select Method:"))
-        layout.addWidget(self.method_selector)
-
-        self.stack = QtWidgets.QStackedWidget()
-        layout.addWidget(self.stack)
-
-        self.manual_form = QtWidgets.QWidget()
-        manual_layout = QFormLayout(self.manual_form)
-        self.name_entry_manual = QLineEdit()
-        self.server_entry = QLineEdit()
-        self.username_entry = QLineEdit()
-        self.password_entry = QLineEdit()
-        self.password_entry.setEchoMode(QLineEdit.Password)
-        manual_layout.addRow("Name:", self.name_entry_manual)
-        manual_layout.addRow("Server URL:", self.server_entry)
-        manual_layout.addRow("Username:", self.username_entry)
-        manual_layout.addRow("Password:", self.password_entry)
-
-        self.m3u_form = QtWidgets.QWidget()
-        m3u_layout = QFormLayout(self.m3u_form)
-        self.name_entry_m3u = QLineEdit()
-        self.m3u_url_entry = QLineEdit()
-        m3u_layout.addRow("Name:", self.name_entry_m3u)
-        m3u_layout.addRow("m3u_plus URL:", self.m3u_url_entry)
-
-        self.stack.addWidget(self.manual_form)
-        self.stack.addWidget(self.m3u_form)
-
-        self.method_selector.currentIndexChanged.connect(self.stack.setCurrentIndex)
-
-        buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
-            Qt.Horizontal, self)
-        layout.addWidget(buttons)
-        buttons.accepted.connect(self.validate_and_accept)
-        buttons.rejected.connect(self.reject)
-
-    def validate_and_accept(self):
-        method = self.method_selector.currentText()
-        if method == "Manual Entry":
-            name = self.name_entry_manual.text().strip()
-            server = self.server_entry.text().strip()
-            username = self.username_entry.text().strip()
-            password = self.password_entry.text().strip()
-            if not name or not server or not username or not password:
-                QtWidgets.QMessageBox.warning(self, "Input Error", "Please fill all fields for Manual Entry.")
-                return
-            self.accept()
-        else:
-            name = self.name_entry_m3u.text().strip()
-            m3u_url = self.m3u_url_entry.text().strip()
-            if not name or not m3u_url:
-                QtWidgets.QMessageBox.warning(self, "Input Error", "Please fill all fields for m3u_plus URL Entry.")
-                return
-            self.accept()
-
-    def get_credentials(self):
-        method = self.method_selector.currentText()
-        if method == "Manual Entry":
-            name = self.name_entry_manual.text().strip()
-            server = self.server_entry.text().strip()
-            username = self.username_entry.text().strip()
-            password = self.password_entry.text().strip()
-            return ('manual', name, server, username, password)
-        else:
-            name = self.name_entry_m3u.text().strip()
-            m3u_url = self.m3u_url_entry.text().strip()
-            return ('m3u_plus', name, m3u_url)
-
 class IPTVPlayerApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Xtream IPTV Player by MY-1 V3.5")
+        self.setWindowTitle("IPTV Player V3.5")
         self.resize(1300, 900)
+
+        self.user_data_file = 'userdata.ini'
 
         self.default_font_size      = 10
         self.go_back_text           = " Go back"
@@ -257,9 +53,12 @@ class IPTVPlayerApp(QMainWindow):
         self.series_navigation_level = 0
         self.finished_fetching_series_info = False
 
-        self.search_history_list = []
-        self.search_history_list_idx = 0
-        self.max_search_history_size = 30
+        #Make history list index a list in order to achieve pass by reference
+        self.streaming_search_history_list      = []
+        self.streaming_search_history_list_idx  = [0]
+        self.category_search_history_list       = []
+        self.category_search_history_list_idx   = [0]
+        self.max_search_history_size            = 30
 
         self.categories_per_stream_type = {}
         self.entries_per_stream_type = {
@@ -268,7 +67,13 @@ class IPTVPlayerApp(QMainWindow):
             'Series': []
         }
 
-        self.currently_loaded_entries = {
+        #Loaded data used for search algorithm
+        self.currently_loaded_categories = {
+            'LIVE': [],
+            'Movies': [],
+            'Series': []
+        }
+        self.currently_loaded_streams = {
             'LIVE': [],
             'Movies': [],
             'Series': [],
@@ -277,10 +82,9 @@ class IPTVPlayerApp(QMainWindow):
         }
 
         #Credentials
-        self.server                 = ""
-        self.username               = ""
-        self.password               = ""
-        self.login_type             = None
+        self.server     = ""
+        self.username   = ""
+        self.password   = ""
 
         #Create threadpool
         self.threadpool = QThreadPool()
@@ -300,25 +104,30 @@ class IPTVPlayerApp(QMainWindow):
         self.initEntryListWidgets()
         self.initInfoBoxes()
 
+        self.initHomeTab()
+
         self.initSettingsTab()
 
         self.initProgressBar()        
 
         #Add widgets to tabs
-        self.live_tab_layout.addWidget(self.search_bar_live, 0, 0, 1, 3)
+        self.live_tab_layout.addWidget(self.category_search_bar_live, 0, 0)
+        self.live_tab_layout.addWidget(self.streaming_search_bar_live, 0, 1)
         self.live_tab_layout.addWidget(self.category_list_live, 1, 0)
         self.live_tab_layout.addWidget(self.streaming_list_live, 1, 1)
-        self.live_tab_layout.addWidget(self.live_EPG_info_box, 1, 2)
+        self.live_tab_layout.addWidget(self.live_EPG_info_box, 0, 2, 2, 1)
 
-        self.movies_tab_layout.addWidget(self.search_bar_movies, 0, 0, 1, 3)
+        self.movies_tab_layout.addWidget(self.category_search_bar_movies, 0, 0)
+        self.movies_tab_layout.addWidget(self.streaming_search_bar_movies, 0, 1)
         self.movies_tab_layout.addWidget(self.category_list_movies, 1, 0)
         self.movies_tab_layout.addWidget(self.streaming_list_movies, 1, 1)
-        self.movies_tab_layout.addWidget(self.movies_info_box, 1, 2)
+        self.movies_tab_layout.addWidget(self.movies_info_box, 0, 2, 2, 1)
 
-        self.series_tab_layout.addWidget(self.search_bar_series, 0, 0, 1, 3)
+        self.series_tab_layout.addWidget(self.category_search_bar_series, 0, 0)
+        self.series_tab_layout.addWidget(self.streaming_search_bar_series, 0, 1)
         self.series_tab_layout.addWidget(self.category_list_series, 1, 0)
         self.series_tab_layout.addWidget(self.streaming_list_series, 1, 1)
-        self.series_tab_layout.addWidget(self.series_info_box, 1, 2)
+        self.series_tab_layout.addWidget(self.series_info_box, 0, 2, 2, 1)
         
         self.info_tab_layout.addWidget(self.iptv_info_text)
 
@@ -368,13 +177,13 @@ class IPTVPlayerApp(QMainWindow):
         settings_tab    = QWidget()
 
         #Create layouts for tabs
-        self.home_tab_layout        = QGridLayout(home_tab)
+        self.home_tab_layout        = QVBoxLayout(home_tab)
         self.live_tab_layout        = QGridLayout(live_tab)
         self.movies_tab_layout      = QGridLayout(movies_tab)
         self.series_tab_layout      = QGridLayout(series_tab)
         self.favorites_tab_layout   = QGridLayout(favorites_tab)
         self.info_tab_layout        = QVBoxLayout(info_tab)
-        self.settings_layout        = QVBoxLayout(settings_tab)
+        self.settings_layout        = QGridLayout(settings_tab)
 
         #Add created tabs to tab widget with their names
         self.tab_widget.addTab(home_tab,        self.home_icon,         "Home")
@@ -386,23 +195,55 @@ class IPTVPlayerApp(QMainWindow):
         self.tab_widget.addTab(settings_tab,    self.settings_icon,     "Settings")
 
     def initSearchBars(self):
-        self.search_bar_live = QLineEdit()
-        self.search_bar_live.setPlaceholderText("Search Live Channels...")
-        self.search_bar_live.setClearButtonEnabled(True)
-        self.add_search_icon(self.search_bar_live)
-        self.search_bar_live.keyPressEvent = lambda e: self.KeyPressed(e, self.search_bar_live, 'LIVE')
+        #Initialize search bars for category lists
+        self.category_search_bar_live = QLineEdit()
+        self.category_search_bar_live.setPlaceholderText("Search Live TV Categories...")
+        self.category_search_bar_live.setClearButtonEnabled(True)
+        self.add_search_icon(self.category_search_bar_live)
+        self.category_search_bar_live.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
+            self.category_search_bar_live, 'category', 'LIVE', self.category_list_widgets, self.category_search_history_list, self.category_search_history_list_idx)
 
-        self.search_bar_movies = QLineEdit()
-        self.search_bar_movies.setPlaceholderText("Search Movies...")
-        self.search_bar_movies.setClearButtonEnabled(True)
-        self.add_search_icon(self.search_bar_movies)
-        self.search_bar_movies.keyPressEvent = lambda e: self.KeyPressed(e, self.search_bar_movies, 'Movies')
+        self.category_search_bar_movies = QLineEdit()
+        self.category_search_bar_movies.setPlaceholderText("Search Movies Categories...")
+        self.category_search_bar_movies.setClearButtonEnabled(True)
+        self.add_search_icon(self.category_search_bar_movies)
+        self.category_search_bar_movies.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
+            self.category_search_bar_movies, 'category', 'Movies', self.category_list_widgets, self.category_search_history_list, self.category_search_history_list_idx)
 
-        self.search_bar_series = QLineEdit()
-        self.search_bar_series.setPlaceholderText("Search Series...")
-        self.search_bar_series.setClearButtonEnabled(True)
-        self.add_search_icon(self.search_bar_series)
-        self.search_bar_series.keyPressEvent = lambda e: self.KeyPressed(e, self.search_bar_series, 'Series')
+        self.category_search_bar_series = QLineEdit()
+        self.category_search_bar_series.setPlaceholderText("Search Series Categories...")
+        self.category_search_bar_series.setClearButtonEnabled(True)
+        self.add_search_icon(self.category_search_bar_series)
+        self.category_search_bar_series.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
+            self.category_search_bar_series, 'category', 'Series', self.category_list_widgets, self.category_search_history_list, self.category_search_history_list_idx)
+
+        #Initialize search bars for streaming content lists
+        self.streaming_search_bar_live = QLineEdit()
+        self.streaming_search_bar_live.setPlaceholderText("Search Live TV Channels...")
+        self.streaming_search_bar_live.setClearButtonEnabled(True)
+        self.add_search_icon(self.streaming_search_bar_live)
+        self.streaming_search_bar_live.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
+            self.streaming_search_bar_live, 'streaming', 'LIVE', self.streaming_list_widgets, self.streaming_search_history_list, self.streaming_search_history_list_idx)
+
+        self.streaming_search_bar_movies = QLineEdit()
+        self.streaming_search_bar_movies.setPlaceholderText("Search Movies...")
+        self.streaming_search_bar_movies.setClearButtonEnabled(True)
+        self.add_search_icon(self.streaming_search_bar_movies)
+        self.streaming_search_bar_movies.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
+            self.streaming_search_bar_movies, 'streaming', 'Movies', self.streaming_list_widgets, self.streaming_search_history_list, self.streaming_search_history_list_idx)
+
+        self.streaming_search_bar_series = QLineEdit()
+        self.streaming_search_bar_series.setPlaceholderText("Search Series...")
+        self.streaming_search_bar_series.setClearButtonEnabled(True)
+        self.add_search_icon(self.streaming_search_bar_series)
+        self.streaming_search_bar_series.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
+            self.streaming_search_bar_series, 'streaming', 'Series', self.streaming_list_widgets, self.streaming_search_history_list, self.streaming_search_history_list_idx)
+
+    def add_search_icon(self, search_bar):
+        search_icon = QIcon.fromTheme("edit-find")
+        if search_icon.isNull():
+            search_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogContentsView)
+        search_bar.addAction(search_icon, QLineEdit.LeadingPosition)
 
     def initIPTVinfo(self):
         self.iptv_info_text = QTextEdit()
@@ -523,104 +364,140 @@ class IPTVPlayerApp(QMainWindow):
         self.movies_info_box = MovieInfoBox()
         self.series_info_box = SeriesInfoBox()
 
+    def initHomeTab(self):
+        #Create lists to show previously watched content
+        self.live_history_list      = QListWidget()
+        self.movie_history_list     = QListWidget()
+        self.series_history_list    = QListWidget()
+
+        #Set that items are viewed from left to right
+        self.live_history_list.setFlow(QListView.LeftToRight)
+        self.movie_history_list.setFlow(QListView.LeftToRight)
+        self.series_history_list.setFlow(QListView.LeftToRight)
+
+        #Create labels for lists
+        self.live_history_lbl   = QLabel("Previously watched TV")
+        self.movie_history_lbl  = QLabel("Previously watched movies")
+        self.series_history_lbl = QLabel("Previously watched series")
+
+        #Set fonts
+        self.live_history_lbl.setFont(QFont('Arial', 14, QFont.Bold))
+        self.movie_history_lbl.setFont(QFont('Arial', 14, QFont.Bold))
+        self.series_history_lbl.setFont(QFont('Arial', 14, QFont.Bold))
+
+        #Add widgets to home tab
+        self.home_tab_layout.addWidget(self.live_history_lbl)
+        self.home_tab_layout.addWidget(self.live_history_list)
+        self.home_tab_layout.addWidget(self.movie_history_lbl)
+        self.home_tab_layout.addWidget(self.movie_history_list)
+        self.home_tab_layout.addWidget(self.series_history_lbl)
+        self.home_tab_layout.addWidget(self.series_history_list)
+
+    def initFavoritesTab(self):
+        pass
+
     def initSettingsTab(self):
         #Create items in settings tab
         self.settings_layout.setSpacing(20)
         self.settings_layout.setAlignment(Qt.AlignTop)
 
-        row1_layout = QHBoxLayout()
-        # row1_layout.setSpacing(15)
+        # row1_layout = QHBoxLayout()
 
-        self.server_label = QLabel("Server URL:")
-        self.server_label.setFixedWidth(100)
-        self.server_entry = QLineEdit()
-        self.server_entry.setPlaceholderText("Enter Server URL...")
-        self.server_entry.setClearButtonEnabled(True)
+        # self.server_label = QLabel("Server URL:")
+        # self.server_label.setFixedWidth(100)
+        # self.server_entry = QLineEdit()
+        # self.server_entry.setPlaceholderText("Enter Server URL...")
+        # self.server_entry.setClearButtonEnabled(True)
 
-        self.username_label = QLabel("Username:")
-        self.username_label.setFixedWidth(100)
-        self.username_entry = QLineEdit()
-        self.username_entry.setPlaceholderText("Enter Username...")
-        self.username_entry.setClearButtonEnabled(True)
+        # self.username_label = QLabel("Username:")
+        # self.username_label.setFixedWidth(100)
+        # self.username_entry = QLineEdit()
+        # self.username_entry.setPlaceholderText("Enter Username...")
+        # self.username_entry.setClearButtonEnabled(True)
 
-        self.password_label = QLabel("Password:")
-        self.password_label.setFixedWidth(100)
-        self.password_entry = QLineEdit()
-        self.password_entry.setPlaceholderText("Enter Password...")
-        self.password_entry.setEchoMode(QLineEdit.Password)
-        self.password_entry.setClearButtonEnabled(True)
+        # self.password_label = QLabel("Password:")
+        # self.password_label.setFixedWidth(100)
+        # self.password_entry = QLineEdit()
+        # self.password_entry.setPlaceholderText("Enter Password...")
+        # self.password_entry.setEchoMode(QLineEdit.Password)
+        # self.password_entry.setClearButtonEnabled(True)
 
-        row1_layout.addWidget(self.server_label)
-        row1_layout.addWidget(self.server_entry)
-        row1_layout.addWidget(self.username_label)
-        row1_layout.addWidget(self.username_entry)
-        row1_layout.addWidget(self.password_label)
-        row1_layout.addWidget(self.password_entry)
+        # row1_layout.addWidget(self.server_label)
+        # row1_layout.addWidget(self.server_entry)
+        # row1_layout.addWidget(self.username_label)
+        # row1_layout.addWidget(self.username_entry)
+        # row1_layout.addWidget(self.password_label)
+        # row1_layout.addWidget(self.password_entry)
 
-        buttons_layout = QHBoxLayout()
+        # buttons_layout = QHBoxLayout()
         # buttons_layout.setSpacing(15)
 
-        self.login_button = QPushButton("Login")
-        self.login_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_DialogApplyButton))
-        self.login_button.clicked.connect(self.login)
+        # self.login_button = QPushButton("Login")
+        # self.login_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_DialogApplyButton))
+        # self.login_button.clicked.connect(self.login)
 
-        self.m3u_plus_button = QPushButton("M3u_plus")
-        search_icon = QIcon.fromTheme("edit-find")
-        if search_icon.isNull():
-            search_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogContentsView)
-        self.m3u_plus_button.setIcon(search_icon)
-        self.m3u_plus_button.clicked.connect(self.open_m3u_plus_dialog)
+        # self.m3u_plus_button = QPushButton("M3u_plus")
+        # search_icon = QIcon.fromTheme("edit-find")
+        # if search_icon.isNull():
+        #     search_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogContentsView)
+        # self.m3u_plus_button.setIcon(search_icon)
+        # self.m3u_plus_button.clicked.connect(self.open_m3u_plus_dialog)
 
-        self.address_book_button = QPushButton("Address Book")
+        self.address_book_button = QPushButton("IPTV accounts")
         self.address_book_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon))
-        self.address_book_button.setToolTip("Manage Saved Credentials")
+        self.address_book_button.setToolTip("Manage IPTV accounts")
         self.address_book_button.clicked.connect(self.open_address_book)
 
         self.choose_player_button = QPushButton("Choose Media Player")
         self.choose_player_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay))
+        self.choose_player_button.setToolTip("Set the Media Player used for watching content, use e.g. VLC or SMPlayer")
         self.choose_player_button.clicked.connect(self.choose_external_player)
 
-        buttons_layout.addWidget(self.login_button)
-        buttons_layout.addWidget(self.m3u_plus_button)
-        buttons_layout.addWidget(self.address_book_button)
-        buttons_layout.addWidget(self.choose_player_button)
+        # buttons_layout.addWidget(self.login_button)
+        # buttons_layout.addWidget(self.m3u_plus_button)
+        # buttons_layout.addWidget(self.address_book_button)
+        # buttons_layout.addWidget(self.choose_player_button)
 
-        checkbox_layout = QVBoxLayout()
-        # checkbox_layout.setAlignment(Qt.AlignRight)
-        # checkbox_layout.setSpacing(15)
-
-        # self.http_method_checkbox = QCheckBox("Use POST Method")
-        # self.http_method_checkbox.setToolTip("Check to use POST instead of GET for server requests")
+        # checkbox_layout = QVBoxLayout()
 
         self.keep_on_top_checkbox = QCheckBox("Keep on top")
         self.keep_on_top_checkbox.setToolTip("Keep the application on top of all windows")
         self.keep_on_top_checkbox.stateChanged.connect(self.toggle_keep_on_top)
 
-        # self.epg_checkbox = QCheckBox("Download EPG")
-        # self.epg_checkbox.setToolTip("Check to download EPG data for channels")
-        # self.epg_checkbox.stateChanged.connect(self.on_epg_checkbox_toggled)
+        self.cache_on_startup_checkbox = QCheckBox("Startup with cached data")
+        self.cache_on_startup_checkbox.setToolTip("Loads the cached IPTV data on startup to reduce startup time.\nNote that the cached data only changes if you manually reload it once in a while.")
+        self.cache_on_startup_checkbox.stateChanged.connect(self.toggle_cache_on_startup)
 
-        self.font_size_label = QLabel("Font Size:")
-        self.font_size_spinbox = QSpinBox()
-        self.font_size_spinbox.setRange(8, 24)
-        self.font_size_spinbox.setValue(10)
-        self.font_size_spinbox.setToolTip("Set the font size for playlist items")
-        self.font_size_spinbox.valueChanged.connect(self.update_font_size)
-        self.font_size_spinbox.setFixedWidth(60)
+        self.reload_data_btn = QPushButton("Reload data")
+        self.reload_data_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload))
+        self.reload_data_btn.setToolTip("Click this to manually reload the IPTV data.\nNote that this only has effect if \'Startup with cached data\' is checked.")
 
-        # checkbox_layout.addWidget(self.http_method_checkbox)
-        checkbox_layout.addWidget(self.keep_on_top_checkbox)
-        # checkbox_layout.addWidget(self.epg_checkbox)
+        # self.font_size_label = QLabel("Font Size:")
+        # self.font_size_spinbox = QSpinBox()
+        # self.font_size_spinbox.setRange(8, 24)
+        # self.font_size_spinbox.setValue(10)
+        # self.font_size_spinbox.setToolTip("Set the font size for playlist items")
+        # self.font_size_spinbox.valueChanged.connect(self.update_font_size)
+        # self.font_size_spinbox.setFixedWidth(60)
 
-        fontbox_layout = QHBoxLayout()
-        fontbox_layout.setAlignment(Qt.AlignLeft)
-        fontbox_layout.addWidget(self.font_size_label)
-        fontbox_layout.addWidget(self.font_size_spinbox)
-        checkbox_layout.addLayout(fontbox_layout)
+        # checkbox_layout.addWidget(self.keep_on_top_checkbox)
+        # checkbox_layout.addWidget(self.cache_on_startup_checkbox)
 
-        self.settings_layout.addLayout(row1_layout)
-        self.settings_layout.addLayout(buttons_layout)
-        self.settings_layout.addLayout(checkbox_layout)
+        # fontbox_layout = QHBoxLayout()
+        # fontbox_layout.setAlignment(Qt.AlignLeft)
+        # fontbox_layout.addWidget(self.font_size_label)
+        # fontbox_layout.addWidget(self.font_size_spinbox)
+        # checkbox_layout.addLayout(fontbox_layout)
+
+        # self.settings_layout.addLayout(row1_layout)
+        # self.settings_layout.addLayout(buttons_layout)
+        # self.settings_layout.addLayout(checkbox_layout)
+
+        self.settings_layout.addWidget(self.address_book_button,        0, 0)
+        self.settings_layout.addWidget(self.choose_player_button,       0, 1)
+        self.settings_layout.addWidget(self.keep_on_top_checkbox,       1, 0)
+        self.settings_layout.addWidget(self.cache_on_startup_checkbox,  2, 0)
+        self.settings_layout.addWidget(self.reload_data_btn,            3, 0)
 
     def initProgressBar(self):
         #Create progress bar
@@ -639,13 +516,16 @@ class IPTVPlayerApp(QMainWindow):
     def load_data_startup(self):
         # Load playlist on startup if enabled
         config = configparser.ConfigParser()
-        config.read('credentials.ini')
+        config.read(self.user_data_file)
 
+        #If startup credentials is in user data file
         if 'Startup credentials' in config:
-            selected_startup_credentials = config['Startup credentials']['startup_credentials']
+            #Get selected account used for startup
+            selected_startup_account = config['Startup credentials']['startup_credentials']
 
-            if 'Credentials' in config and selected_startup_credentials in config['Credentials']:
-                data = config['Credentials'][selected_startup_credentials]
+            #Check if account credentials are in user data file
+            if 'Credentials' in config and selected_startup_account in config['Credentials']:
+                data = config['Credentials'][selected_startup_account]
 
                 if data.startswith('manual|'):
                     _, server, username, password = data.split('|')
@@ -659,18 +539,18 @@ class IPTVPlayerApp(QMainWindow):
                     self.extract_credentials_from_m3u_plus_url(m3u_url)
                     self.login()
 
-    def add_search_icon(self, search_bar):
-        search_icon = QIcon.fromTheme("edit-find")
-        if search_icon.isNull():
-            search_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogContentsView)
-        search_bar.addAction(search_icon, QLineEdit.LeadingPosition)
-
     def toggle_keep_on_top(self, state):
         if state == Qt.Checked:
             self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         else:
             self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
         self.show()
+
+    def toggle_cache_on_startup(self, state):
+        if state == Qt.Checked:
+            print("checked")
+        else:
+            print("unchecked")
 
     def open_m3u_plus_dialog(self):
         text, ok = QtWidgets.QInputDialog.getText(self, 'M3u_plus Login', 'Enter m3u_plus URL:')
@@ -700,9 +580,9 @@ class IPTVPlayerApp(QMainWindow):
                 self.server = match.group(1)
                 self.username = match.group(2)
                 self.password = match.group(3)
-                self.server_entry.setText(self.server)
-                self.username_entry.setText(self.username)
-                self.password_entry.setText(self.password)
+                # self.server_entry.setText(self.server)
+                # self.username_entry.setText(self.username)
+                # self.password_entry.setText(self.password)
             else:
                 self.animate_progress(0, 100, "Invalid m3u_plus or m3u URL")
         except Exception as e:
@@ -739,9 +619,9 @@ class IPTVPlayerApp(QMainWindow):
             list_widget.clear()
 
         #Get login credentials
-        self.server = self.server_entry.text().strip()
-        self.username = self.username_entry.text().strip()
-        self.password = self.password_entry.text().strip()
+        # self.server = self.server_entry.text().strip()
+        # self.username = self.username_entry.text().strip()
+        # self.password = self.password_entry.text().strip()
 
         #Check if login credentials are not empty
         if not self.server or not self.username or not self.password:
@@ -756,19 +636,19 @@ class IPTVPlayerApp(QMainWindow):
             return
 
         #Start IPTV data fetch thread
-        self.fetch_data_thread(self.server, self.username, self.password)
+        self.fetch_data_thread()
 
         self.set_progress_bar(0, "Going to fetch data...")
 
-    def fetch_data_thread(self, server, username, password):
+    def fetch_data_thread(self):
         dataWorker = FetchDataWorker(self.server, self.username, self.password)
         dataWorker.signals.finished.connect(self.process_data)
         dataWorker.signals.error.connect(self.on_fetch_data_error)
         dataWorker.signals.progress_bar.connect(self.animate_progress)
         self.threadpool.start(dataWorker)
 
-    def process_data(self, iptv_info, categories, entries_per_stream_type):
-        self.categories_per_stream_type = categories
+    def process_data(self, iptv_info, categories_per_stream_type, entries_per_stream_type):
+        self.categories_per_stream_type = categories_per_stream_type
         self.entries_per_stream_type = entries_per_stream_type
         # print(self.entries_per_stream_type['LIVE'])
 
@@ -829,11 +709,17 @@ class IPTVPlayerApp(QMainWindow):
         for stream_type in self.entries_per_stream_type.keys():
             self.streaming_list_widgets[stream_type].clear()
             self.category_list_widgets[stream_type].clear()
-            self.category_list_widgets[stream_type].addItem(self.all_categories_text)
+            # self.category_list_widgets[stream_type].addItem(self.all_categories_text)
+            self.categories_per_stream_type[stream_type].append({'category_name': self.all_categories_text})
 
-            # self.currently_loaded_entries[stream_type] = self.entries_per_stream_type[stream_type]
+            # self.currently_loaded_streams[stream_type] = self.entries_per_stream_type[stream_type]
+            #Fill currently loaded streams with current stream data
             for entry in self.entries_per_stream_type[stream_type]:
-                self.currently_loaded_entries[stream_type].append(entry)
+                self.currently_loaded_streams[stream_type].append(entry)
+
+            #Fill currently loaded categories with current category data
+            for entry in self.categories_per_stream_type[stream_type]:
+                self.currently_loaded_categories[stream_type].append(entry)
 
             #Add categories in category list
             num_of_categories = len(self.categories_per_stream_type[stream_type])
@@ -876,54 +762,168 @@ class IPTVPlayerApp(QMainWindow):
         self.set_progress_bar(100, "Failed fetching data")
 
     def fetch_vod_info(self, vod_id):
-        try:
-            #Set request parameters
-            headers = {'User-Agent': CUSTOM_USER_AGENT}
-            host_url = f"{self.server}/player_api.php"
-            params = {
-                'username': self.username,
-                'password': self.password,
-                'action': 'get_vod_info',
-                'vod_id': vod_id
-            }
+        movie_info_fetcher = MovieInfoFetcher(self.server, self.username, self.password, vod_id)
+        movie_info_fetcher.signals.finished.connect(self.process_vod_info)
+        movie_info_fetcher.signals.error.connect(self.on_fetch_data_error)
+        self.threadpool.start(movie_info_fetcher)
 
-            #Request vod info
-            vod_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+    def process_vod_info(self, vod_info, vod_data):
+        #Get movie image url
+        movie_img_url = vod_info.get('movie_image', 0)
+        if movie_img_url:
+            #Fetch image data
+            movie_image = self.fetch_image(movie_img_url)
+        else:
+            #Get replacement image for not found
+            movie_image = QPixmap('Images/no_image.jpg')
 
-            #Get vod info data
-            vod_info_data = vod_info_resp.json()
+        #Set movie image
+        self.movies_info_box.cover.setPixmap(movie_image.scaledToWidth(self.movies_info_box.maxCoverWidth))
 
-            #Get info and movie data
-            vod_info = vod_info_data.get('info', {})
-            vod_data = vod_info_data.get('movie_data', {})
+        #If vod data is valid
+        if vod_data:
+            #Get movie name from vod_info, otherwise try name from vod_data
+            movie_name = vod_info.get('name', vod_data.get('name', 'No name Available...'))
 
-            #Return series info data
-            # return vod_info_resp.json()
-            return vod_info, vod_data
-        except Exception as e:
-            print(f"Failed fetching movie info: {e}")
-            return {}
+            #If movie name is an empty string
+            if not movie_name:
+                movie_name = vod_data.get('name', 'No name Available...')
 
-    def fetch_series_info(self, series_id):
-        try:
-            #Set request parameters
-            headers = {'User-Agent': CUSTOM_USER_AGENT}
-            host_url = f"{self.server}/player_api.php"
-            params = {
-                'username': self.username,
-                'password': self.password,
-                'action': 'get_series_info',
-                'series_id': series_id
-            }
+                #Check again if movie name is an empty string
+                if not movie_name:
+                    movie_name = 'No name Available...'
+        else:
+            #Get movie name from vod info
+            movie_name = vod_info.get('name', 'No name Available...')
 
-            #Request series info
-            series_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+        #Set movie info box texts
+        self.movies_info_box.name.setText(f"{movie_name}")
+        self.movies_info_box.release_date.setText(f"Release date: {vod_info.get('releasedate', '??-??-????')}")
+        self.movies_info_box.country.setText(f"Country: {vod_info.get('country', '?')}")
+        self.movies_info_box.genre.setText(f"Genre: {vod_info.get('genre', '?')}")
+        self.movies_info_box.duration.setText(f"Duration: {vod_info.get('duration', '??:??:??')}")
+        self.movies_info_box.rating.setText(f"Rating: {vod_info.get('rating', '?')}")
+        self.movies_info_box.director.setText(f"Director: {vod_info.get('director', 'director: ?')}")
+        self.movies_info_box.cast.setText(f"Cast: {vod_info.get('actors', 'actors: ?')}")
+        self.movies_info_box.description.setText(f"Description: {vod_info.get('description', 'description: ?')}")
+        self.movies_info_box.trailer.setText(f"Trailer: {vod_info.get('youtube_trailer', '?')}")
+        self.movies_info_box.tmdb.setText(f"TMBD: {vod_info.get('tmdb_id', '?')}")
 
-            #Return series info data
-            return series_info_resp.json()
-        except Exception as e:
-            print(f"Failed fetching series info: {e}")
-            return {}
+        #Update progress bar
+        if not vod_info:
+            print(f"VOD info was empty: {vod_info}")
+            self.set_progress_bar(100, "Failed loading Movie info")
+        else:
+            self.set_progress_bar(100, "Loaded Movie info")
+
+    def fetch_series_info(self, series_id, is_show_request):
+        series_info_fetcher = SeriesInfoFetcher(self.server, self.username, self.password, series_id, is_show_request)
+        series_info_fetcher.signals.finished.connect(self.process_series_info)
+        series_info_fetcher.signals.error.connect(self.on_fetch_data_error)
+        self.threadpool.start(series_info_fetcher)
+        # try:
+        #     #Set request parameters
+        #     headers = {'User-Agent': CUSTOM_USER_AGENT}
+        #     host_url = f"{self.server}/player_api.php"
+        #     params = {
+        #         'username': self.username,
+        #         'password': self.password,
+        #         'action': 'get_series_info',
+        #         'series_id': series_id
+        #     }
+
+        #     #Request series info
+        #     series_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
+
+        #     #Return series info data
+        #     return series_info_resp.json()
+        # except Exception as e:
+        #     print(f"Failed fetching series info: {e}")
+        #     return {}
+
+    def process_series_info(self, series_info_data, is_show_request):
+        #If no series info data available
+        if not series_info_data:
+            self.animate_progress(0, 100, "Failed fetching series info")
+            return
+
+        #Check if fetch request came from show_seasons()
+        if is_show_request:
+            #Clear series list
+            self.streaming_list_widgets['Series'].clear()
+
+            #Reset scrollbar position to top
+            self.streaming_list_widgets['Series'].scrollToTop()
+
+            #Add go back item
+            go_back_item = QListWidgetItem(self.go_back_text)
+            go_back_item.setIcon(self.go_back_icon)
+            self.streaming_list_widgets['Series'].addItem(go_back_item)
+
+            #Save currently loaded series data for search funcitonality
+            self.currently_loaded_streams['Seasons'] = series_info_data['episodes']
+
+            #Go through each season in the series info data.
+            #Note that 'episodes' is called, as this is the name given in the data. 
+            #When you look at the data you can see these are actually seasons.
+            for season in series_info_data['episodes'].keys():
+                #Create season item
+                item = QListWidgetItem(f"Season {season}")
+
+                #Set season data to item
+                item.setData(Qt.UserRole, series_info_data['episodes'][season])
+                # item.setIcon(channel_icon)
+
+                #Add season item to series list
+                self.streaming_list_widgets['Series'].addItem(item)
+
+            self.animate_progress(0, 100, "Loading finished")
+
+        #Otherwise request came from single click to show only series info
+        else:
+            #Get series information data
+            series_info = series_info_data['info']
+
+            #Get movie image url
+            series_img_url = series_info.get('cover', 0)
+            if series_img_url:
+                #Fetch image data
+                series_image = self.fetch_image(series_img_url)
+            else:
+                #Get replacement image for not found
+                series_image = QPixmap('Images/no_image.jpg')
+
+            #Set series image
+            self.series_info_box.cover.setPixmap(series_image.scaledToWidth(self.series_info_box.maxCoverWidth))
+
+            #Get series name
+            series_name = series_info.get('name', 'No name Available...')
+            if not series_name:
+                #If series name is empty set replacement
+                series_name = 'No name Available...'
+
+            for key in series_info_data['episodes'].keys():
+                print(f"season: {key}")
+
+            #Set series info box texts
+            self.series_info_box.name.setText(f"{series_name}")
+            self.series_info_box.release_date.setText(f"Release date: {series_info.get('releaseDate', '??-??-????')}")
+            self.series_info_box.genre.setText(f"Genre: {series_info.get('genre', '?')}")
+            self.series_info_box.num_seasons.setText(f"Number of seasons: ?")
+            self.series_info_box.duration.setText(f"Episode duration: {series_info.get('episode_run_time', '?')} min")
+            self.series_info_box.rating.setText(f"Rating: {series_info.get('rating', '?')}")
+            self.series_info_box.director.setText(f"Director: {series_info.get('director', 'director: ?')}")
+            self.series_info_box.cast.setText(f"Cast: {series_info.get('cast', '?')}")
+            self.series_info_box.description.setText(f"Description: {series_info.get('plot', 'description: ?')}")
+            self.series_info_box.trailer.setText(f"Trailer: {series_info.get('youtube_trailer', '?')}")
+            self.series_info_box.tmdb.setText(f"TMDB: {series_info.get('tmdb', '?')}")
+
+            #Update progress bar
+            if not series_info:
+                print(f"Series info was empty: {series_info}")
+                self.set_progress_bar(100, "Failed loading Series info")
+            else:
+                self.set_progress_bar(100, "Loaded Series info")
 
     def fetch_image(self, img_url):
         try:
@@ -980,9 +980,15 @@ class IPTVPlayerApp(QMainWindow):
 
             self.set_progress_bar(0, "Loading items")
 
+            #Reset navigation level
             self.series_navigation_level = 0
+
+            #Clear items in list
             self.streaming_list_widgets[stream_type].clear()
-            self.currently_loaded_entries[stream_type].clear()
+            self.currently_loaded_streams[stream_type].clear()
+
+            #Reset scrollbar position to top
+            self.streaming_list_widgets[stream_type].scrollToTop()
 
             for entry in self.entries_per_stream_type[stream_type]:
                 # print(entry)
@@ -990,14 +996,14 @@ class IPTVPlayerApp(QMainWindow):
                     item = QListWidgetItem(entry['name'])
                     item.setData(Qt.UserRole, entry)
 
-                    self.currently_loaded_entries[stream_type].append(entry)
+                    self.currently_loaded_streams[stream_type].append(entry)
                     self.streaming_list_widgets[stream_type].addItem(item)
 
                 elif entry['category_id'] == category_id:
                     item = QListWidgetItem(entry['name'])
                     item.setData(Qt.UserRole, entry)
 
-                    self.currently_loaded_entries[stream_type].append(entry)
+                    self.currently_loaded_streams[stream_type].append(entry)
                     self.streaming_list_widgets[stream_type].addItem(item)
 
             self.animate_progress(0, 100, "Loading finished")
@@ -1121,109 +1127,113 @@ class IPTVPlayerApp(QMainWindow):
                 self.set_progress_bar(0, "Loading Movie info")
 
                 #Get vod info and vod data
-                vod_info, vod_data = self.fetch_vod_info(clicked_item_data['stream_id'])
+                # vod_info, vod_data = self.fetch_vod_info(clicked_item_data['stream_id'])
+                self.fetch_vod_info(clicked_item_data['stream_id'])
 
-                #Get movie image url
-                movie_img_url = vod_info.get('movie_image', 0)
-                if movie_img_url:
-                    #Fetch image data
-                    movie_image = self.fetch_image(movie_img_url)
-                else:
-                    #Get replacement image for not found
-                    movie_image = QPixmap('Images/no_image.jpg')
+                # #Get movie image url
+                # movie_img_url = vod_info.get('movie_image', 0)
+                # if movie_img_url:
+                #     #Fetch image data
+                #     movie_image = self.fetch_image(movie_img_url)
+                # else:
+                #     #Get replacement image for not found
+                #     movie_image = QPixmap('Images/no_image.jpg')
 
-                #Set movie image
-                self.movies_info_box.cover.setPixmap(movie_image.scaledToWidth(self.movies_info_box.maxCoverWidth))
+                # #Set movie image
+                # self.movies_info_box.cover.setPixmap(movie_image.scaledToWidth(self.movies_info_box.maxCoverWidth))
 
-                #If vod data is valid
-                if vod_data:
-                    #Get movie name from vod_info, otherwise try name from vod_data
-                    movie_name = vod_info.get('name', vod_data.get('name', 'No name Available...'))
+                # #If vod data is valid
+                # if vod_data:
+                #     #Get movie name from vod_info, otherwise try name from vod_data
+                #     movie_name = vod_info.get('name', vod_data.get('name', 'No name Available...'))
 
-                    #If movie name is an empty string
-                    if not movie_name:
-                        movie_name = vod_data.get('name', 'No name Available...')
+                #     #If movie name is an empty string
+                #     if not movie_name:
+                #         movie_name = vod_data.get('name', 'No name Available...')
 
-                        #Check again if movie name is an empty string
-                        if not movie_name:
-                            movie_name = 'No name Available...'
-                else:
-                    #Get movie name from vod info
-                    movie_name = vod_info.get('name', 'No name Available...')
+                #         #Check again if movie name is an empty string
+                #         if not movie_name:
+                #             movie_name = 'No name Available...'
+                # else:
+                #     #Get movie name from vod info
+                #     movie_name = vod_info.get('name', 'No name Available...')
 
-                #Set movie info box texts
-                self.movies_info_box.name.setText(f"{movie_name}")
-                self.movies_info_box.release_date.setText(f"Release date: {vod_info.get('releasedate', '??-??-????')}")
-                self.movies_info_box.country.setText(f"Country: {vod_info.get('country', '?')}")
-                self.movies_info_box.genre.setText(f"Genre: {vod_info.get('genre', '?')}")
-                self.movies_info_box.duration.setText(f"Duration: {vod_info.get('duration', '??:??:??')}")
-                self.movies_info_box.rating.setText(f"Rating: {vod_info.get('rating', '?')}")
-                self.movies_info_box.director.setText(f"Director: {vod_info.get('director', 'director: ?')}")
-                self.movies_info_box.cast.setText(f"Cast: {vod_info.get('actors', 'actors: ?')}")
-                self.movies_info_box.description.setText(f"Description: {vod_info.get('description', 'description: ?')}")
-                self.movies_info_box.trailer.setText(f"Trailer: {vod_info.get('youtube_trailer', '?')}")
-                self.movies_info_box.tmdb.setText(f"TMBD: {vod_info.get('tmdb_id', '?')}")
+                # #Set movie info box texts
+                # self.movies_info_box.name.setText(f"{movie_name}")
+                # self.movies_info_box.release_date.setText(f"Release date: {vod_info.get('releasedate', '??-??-????')}")
+                # self.movies_info_box.country.setText(f"Country: {vod_info.get('country', '?')}")
+                # self.movies_info_box.genre.setText(f"Genre: {vod_info.get('genre', '?')}")
+                # self.movies_info_box.duration.setText(f"Duration: {vod_info.get('duration', '??:??:??')}")
+                # self.movies_info_box.rating.setText(f"Rating: {vod_info.get('rating', '?')}")
+                # self.movies_info_box.director.setText(f"Director: {vod_info.get('director', 'director: ?')}")
+                # self.movies_info_box.cast.setText(f"Cast: {vod_info.get('actors', 'actors: ?')}")
+                # self.movies_info_box.description.setText(f"Description: {vod_info.get('description', 'description: ?')}")
+                # self.movies_info_box.trailer.setText(f"Trailer: {vod_info.get('youtube_trailer', '?')}")
+                # self.movies_info_box.tmdb.setText(f"TMBD: {vod_info.get('tmdb_id', '?')}")
 
-                #Update progress bar
-                if not vod_info:
-                    print(f"VOD info was empty: {vod_info}")
-                    self.set_progress_bar(100, "Failed loading Movie info")
-                else:
-                    self.set_progress_bar(100, "Loaded Movie info")
+                # #Update progress bar
+                # if not vod_info:
+                #     print(f"VOD info was empty: {vod_info}")
+                #     self.set_progress_bar(100, "Failed loading Movie info")
+                # else:
+                #     self.set_progress_bar(100, "Loaded Movie info")
 
             #Show series info if series clicked
             elif stream_type == 'series':
+                self.set_progress_bar(0, "Loading Series info")
+
                 #Fetch series info data
-                series_info_data = self.fetch_series_info(clicked_item_data['series_id'])
+                # series_info_data = self.fetch_series_info(clicked_item_data['series_id'])
+                self.fetch_series_info(clicked_item_data['series_id'], False)
 
-                #If no series info data available
-                if not series_info_data:
-                    self.animate_progress(0, 100, "Failed fetching series info")
-                    return
+                # #If no series info data available
+                # if not series_info_data:
+                #     self.animate_progress(0, 100, "Failed fetching series info")
+                #     return
 
-                #Get series information data
-                series_info = series_info_data['info']
+                # #Get series information data
+                # series_info = series_info_data['info']
 
-                #Get movie image url
-                series_img_url = series_info.get('cover', 0)
-                if series_img_url:
-                    #Fetch image data
-                    series_image = self.fetch_image(series_img_url)
-                else:
-                    #Get replacement image for not found
-                    series_image = QPixmap('Images/no_image.jpg')
+                # #Get movie image url
+                # series_img_url = series_info.get('cover', 0)
+                # if series_img_url:
+                #     #Fetch image data
+                #     series_image = self.fetch_image(series_img_url)
+                # else:
+                #     #Get replacement image for not found
+                #     series_image = QPixmap('Images/no_image.jpg')
 
-                #Set series image
-                self.series_info_box.cover.setPixmap(series_image.scaledToWidth(self.series_info_box.maxCoverWidth))
+                # #Set series image
+                # self.series_info_box.cover.setPixmap(series_image.scaledToWidth(self.series_info_box.maxCoverWidth))
 
-                #Get series name
-                series_name = series_info.get('name', 'No name Available...')
-                if not series_name:
-                    #If series name is empty set replacement
-                    series_name = 'No name Available...'
+                # #Get series name
+                # series_name = series_info.get('name', 'No name Available...')
+                # if not series_name:
+                #     #If series name is empty set replacement
+                #     series_name = 'No name Available...'
 
-                for key in series_info_data['episodes'].keys():
-                    print(f"season: {key}")
+                # for key in series_info_data['episodes'].keys():
+                #     print(f"season: {key}")
 
-                #Set series info box texts
-                self.series_info_box.name.setText(f"{series_name}")
-                self.series_info_box.release_date.setText(f"Release date: {series_info.get('releaseDate', '??-??-????')}")
-                self.series_info_box.genre.setText(f"Genre: {series_info.get('genre', '?')}")
-                self.series_info_box.num_seasons.setText(f"Number of seasons: ?")
-                self.series_info_box.duration.setText(f"Episode duration: {series_info.get('episode_run_time', '?')} min")
-                self.series_info_box.rating.setText(f"Rating: {series_info.get('rating', '?')}")
-                self.series_info_box.director.setText(f"Director: {series_info.get('director', 'director: ?')}")
-                self.series_info_box.cast.setText(f"Cast: {series_info.get('cast', '?')}")
-                self.series_info_box.description.setText(f"Description: {series_info.get('plot', 'description: ?')}")
-                self.series_info_box.trailer.setText(f"Trailer: {series_info.get('youtube_trailer', '?')}")
-                self.series_info_box.tmdb.setText(f"TMDB: {series_info.get('tmdb', '?')}")
+                # #Set series info box texts
+                # self.series_info_box.name.setText(f"{series_name}")
+                # self.series_info_box.release_date.setText(f"Release date: {series_info.get('releaseDate', '??-??-????')}")
+                # self.series_info_box.genre.setText(f"Genre: {series_info.get('genre', '?')}")
+                # self.series_info_box.num_seasons.setText(f"Number of seasons: ?")
+                # self.series_info_box.duration.setText(f"Episode duration: {series_info.get('episode_run_time', '?')} min")
+                # self.series_info_box.rating.setText(f"Rating: {series_info.get('rating', '?')}")
+                # self.series_info_box.director.setText(f"Director: {series_info.get('director', 'director: ?')}")
+                # self.series_info_box.cast.setText(f"Cast: {series_info.get('cast', '?')}")
+                # self.series_info_box.description.setText(f"Description: {series_info.get('plot', 'description: ?')}")
+                # self.series_info_box.trailer.setText(f"Trailer: {series_info.get('youtube_trailer', '?')}")
+                # self.series_info_box.tmdb.setText(f"TMDB: {series_info.get('tmdb', '?')}")
 
-                #Update progress bar
-                if not series_info:
-                    print(f"Series info was empty: {series_info}")
-                    self.set_progress_bar(100, "Failed loading Series info")
-                else:
-                    self.set_progress_bar(100, "Loaded Series info")
+                # #Update progress bar
+                # if not series_info:
+                #     print(f"Series info was empty: {series_info}")
+                #     self.set_progress_bar(100, "Failed loading Series info")
+                # else:
+                #     self.set_progress_bar(100, "Loaded Series info")
 
         except Exception as e:
             print(f"Failed: {e}")
@@ -1279,25 +1289,28 @@ class IPTVPlayerApp(QMainWindow):
     def go_back_to_level(self, series_navigation_level):
         self.set_progress_bar(0, "Loading items")
 
-        if series_navigation_level == 0:    #From seasons back to series list
-            self.streaming_list_widgets['Series'].clear()
-            # QtWidgets.qApp.processEvents()
+        #Clear series list widget
+        self.streaming_list_widgets['Series'].clear()
 
-            for entry in self.currently_loaded_entries['Series']:
+        #Reset scrollbar position to top
+        self.streaming_list_widgets['Series'].scrollToTop()
+
+        if series_navigation_level == 0:    #From seasons back to series list
+            for entry in self.currently_loaded_streams['Series']:
                 item = QListWidgetItem(entry['name'])
                 item.setData(Qt.UserRole, entry)
 
                 self.streaming_list_widgets['Series'].addItem(item)
 
         elif series_navigation_level == 1:  #From episodes back to seasons list
-            self.streaming_list_widgets['Series'].clear()
-            # QtWidgets.qApp.processEvents()
+            #Add go back item
+            go_back_item = QListWidgetItem(self.go_back_text)
+            go_back_item.setIcon(self.go_back_icon)
+            self.streaming_list_widgets['Series'].addItem(go_back_item)
 
-            self.streaming_list_widgets['Series'].addItem(self.go_back_text)
-
-            for season in self.currently_loaded_entries['Seasons'].keys():
+            for season in self.currently_loaded_streams['Seasons'].keys():
                 item = QListWidgetItem(f"Season {season}")
-                item.setData(Qt.UserRole, self.currently_loaded_entries['Seasons'][season])
+                item.setData(Qt.UserRole, self.currently_loaded_streams['Seasons'][season])
 
                 self.streaming_list_widgets['Series'].addItem(item)
 
@@ -1306,38 +1319,44 @@ class IPTVPlayerApp(QMainWindow):
     def show_seasons(self, seasons_data):
         self.set_progress_bar(0, "Loading items")
 
-        # #Fetch series info data
-        series_info_data = self.fetch_series_info(seasons_data['series_id'])
+        #Fetch series info data
+        # series_info_data = self.fetch_series_info(seasons_data['series_id'])
+        self.fetch_series_info(seasons_data['series_id'], True)
 
-        #If no series info data available
-        if not series_info_data:
-            self.animate_progress(0, 100, "Failed fetching series info")
-            return
+        # #If no series info data available
+        # if not series_info_data:
+        #     self.animate_progress(0, 100, "Failed fetching series info")
+        #     return
 
-        #Clear series list
-        self.streaming_list_widgets['Series'].clear()
+        # #Clear series list
+        # self.streaming_list_widgets['Series'].clear()
 
-        #Add go back item
-        self.streaming_list_widgets['Series'].addItem(self.go_back_text)
+        # #Reset scrollbar position to top
+        # self.streaming_list_widgets['Series'].scrollToTop()
 
-        #Save currently loaded series data for search funcitonality
-        self.currently_loaded_entries['Seasons'] = series_info_data['episodes']
+        # #Add go back item
+        # go_back_item = QListWidgetItem(self.go_back_text)
+        # go_back_item.setIcon(self.go_back_icon)
+        # self.streaming_list_widgets['Series'].addItem(go_back_item)
 
-        #Go through each season in the series info data.
-        #Note that 'episodes' is called, as this is the name given in the data. 
-        #When you look at the data you can see these are actually seasons.
-        for season in series_info_data['episodes'].keys():
-            #Create season item
-            item = QListWidgetItem(f"Season {season}")
+        # #Save currently loaded series data for search funcitonality
+        # self.currently_loaded_streams['Seasons'] = series_info_data['episodes']
 
-            #Set season data to item
-            item.setData(Qt.UserRole, series_info_data['episodes'][season])
-            # item.setIcon(channel_icon)
+        # #Go through each season in the series info data.
+        # #Note that 'episodes' is called, as this is the name given in the data. 
+        # #When you look at the data you can see these are actually seasons.
+        # for season in series_info_data['episodes'].keys():
+        #     #Create season item
+        #     item = QListWidgetItem(f"Season {season}")
 
-            #Add season item to series list
-            self.streaming_list_widgets['Series'].addItem(item)
+        #     #Set season data to item
+        #     item.setData(Qt.UserRole, series_info_data['episodes'][season])
+        #     # item.setIcon(channel_icon)
 
-        self.animate_progress(0, 100, "Loading finished")
+        #     #Add season item to series list
+        #     self.streaming_list_widgets['Series'].addItem(item)
+
+        # self.animate_progress(0, 100, "Loading finished")
 
     def show_episodes(self, episodes_data):
         self.set_progress_bar(0, "Loading items")
@@ -1345,11 +1364,16 @@ class IPTVPlayerApp(QMainWindow):
         #Clear series list
         self.streaming_list_widgets['Series'].clear()
 
+        #Reset scrollbar position to top
+        self.streaming_list_widgets['Series'].scrollToTop()
+
         #Add go back item
-        self.streaming_list_widgets['Series'].addItem(self.go_back_text)
+        go_back_item = QListWidgetItem(self.go_back_text)
+        go_back_item.setIcon(self.go_back_icon)
+        self.streaming_list_widgets['Series'].addItem(go_back_item)
 
         #Clear episodes list so it can be filled again
-        self.currently_loaded_entries['Episodes'].clear()
+        self.currently_loaded_streams['Episodes'].clear()
 
         #Show episodes in list
         for episode in episodes_data:
@@ -1368,7 +1392,7 @@ class IPTVPlayerApp(QMainWindow):
             item.setData(Qt.UserRole, episode)
 
             #Append episode data to the currently loaded list for search functionality
-            self.currently_loaded_entries['Episodes'].append(episode)
+            self.currently_loaded_streams['Episodes'].append(episode)
 
             #Add episode item to series list
             self.streaming_list_widgets['Series'].addItem(item)
@@ -1380,66 +1404,83 @@ class IPTVPlayerApp(QMainWindow):
             try:
                 print(f"Going to play: {url}")
                 self.animate_progress(0, 100, "Loading player for streaming")
+
                 subprocess.Popen([self.external_player_command, url])
             except:
                 self.animate_progress(0, 100, "Failed playing stream")
         else:
-            self.animate_progress(0, 100, "No external player configured")
+            #Create warning message box to indicate error
+            error_dialog = QMessageBox()
+            error_dialog.setIcon(QMessageBox.Warning)
+            error_dialog.setWindowTitle("No Media Player")
+            error_dialog.setText("No media player configured!\nPlease configure a media player.")
+
+            #Set only OK button
+            error_dialog.setStandardButtons(QMessageBox.Ok)
+
+            #Show error dialog
+            error_dialog.exec_()
 
     def choose_external_player(self):
+        #Open file dialog box in order to select media player program
         file_dialog = QFileDialog()
         file_dialog.setFileMode(QFileDialog.ExistingFile)
+
         if sys.platform.startswith('win'):
             file_dialog.setNameFilter("Executable files (*.exe *.bat)")
         else:
             file_dialog.setNameFilter("Executable files (*)")
+
         file_dialog.setWindowTitle("Select External Media Player")
+
         if file_dialog.exec_():
             file_paths = file_dialog.selectedFiles()
+
             if len(file_paths) > 0:
                 self.external_player_command = file_paths[0]
-                self.save_external_player_command()
-                print("External Player selected:", self.external_player_command)
 
-    def KeyPressed(self, e, search_bar, stream_type):
-        search_history_size = len(self.search_history_list)
+                self.save_external_player_command()
+
+    def SearchBarKeyPressed(self, e, search_bar, list_content_type, stream_type, list_widgets, history_list, history_list_idx):
+        search_history_size = len(history_list)
         text = search_bar.text()
 
         match e.key():
             case Qt.Key_Return:
-                self.streaming_list_widgets[stream_type].clear()
+                list_widgets[stream_type].clear()
+                
+                history_list_idx[0] = 0
 
                 if text:
-                    self.search_history_list.insert(0, text)
-                    self.search_history_list_idx = 0
+                    history_list.insert(0, text)
 
                     if search_history_size >= self.max_search_history_size:
-                        self.search_history_list.pop(-1)
+                        history_list.pop(-1)
 
-                self.search_in_list(stream_type, text)
+                self.search_in_list(list_content_type, stream_type, text)
 
             case Qt.Key_Up:
                 #Check if list is empty
-                if not self.search_history_list:
+                if not history_list:
                     return
 
-                self.search_history_list_idx += 1
-                if self.search_history_list_idx >= search_history_size:
-                    self.search_history_list_idx = search_history_size - 1
+                history_list_idx[0] += 1
+                if history_list_idx[0] >= search_history_size:
+                    history_list_idx[0] = search_history_size - 1
 
-                search_bar.setText(self.search_history_list[self.search_history_list_idx])
+                search_bar.setText(history_list[history_list_idx[0]])
 
             case Qt.Key_Down:
                 #Check if list is empty
-                if not self.search_history_list:
+                if not history_list:
                     return
 
-                self.search_history_list_idx -= 1
-                if self.search_history_list_idx < 0:
-                    self.search_history_list_idx = -1
+                history_list_idx[0] -= 1
+                if history_list_idx[0] < 0:
+                    history_list_idx[0] = -1
                     search_bar.clear()
                 else:
-                    search_bar.setText(self.search_history_list[self.search_history_list_idx])
+                    search_bar.setText(history_list[history_list_idx[0]])
 
             case Qt.Key_Left:
                 search_bar.cursorBackward(False, 1)
@@ -1467,38 +1508,51 @@ class IPTVPlayerApp(QMainWindow):
                 search_bar.insert(e.text())
                 # e.accept()
 
-    def search_in_list(self, stream_type, text):
+    def search_in_list(self, list_content_type, stream_type, text):
         try:
             self.set_progress_bar(0, f"Loading search results...")
 
-            self.streaming_list_widgets[stream_type].clear()
+            #If searching in category list
+            if list_content_type == 'category':
+                self.category_list_widgets[stream_type].clear()
 
-            match self.series_navigation_level:
-                case 0: #LIVE/VOD/Series
-                    for entry in self.currently_loaded_entries[stream_type]:
-                        if text.lower() in entry['name'].lower():
-                            item = QListWidgetItem(entry['name'])
-                            item.setData(Qt.UserRole, entry)
+                for entry in self.currently_loaded_categories[stream_type]:
+                    if text.lower() in entry.get('category_name', '').lower():
+                        item = QListWidgetItem(entry['category_name'])
+                        item.setData(Qt.UserRole, entry)
 
-                            self.streaming_list_widgets[stream_type].addItem(item)
-                case 1: #Seasons
-                    self.streaming_list_widgets[stream_type].addItem(self.go_back_text)
+                        self.category_list_widgets[stream_type].addItem(item)
 
-                    for season in self.currently_loaded_entries['Seasons'].keys():
-                        if text.lower() in f"season {season}":
-                            item = QListWidgetItem(f"Season {season}")
-                            item.setData(Qt.UserRole, self.currently_loaded_entries['Seasons'][season])
+            #If searching in streaming content list
+            elif list_content_type == 'streaming':
+                self.streaming_list_widgets[stream_type].clear()
 
-                            self.streaming_list_widgets[stream_type].addItem(item)
-                case 2: #Episodes
-                    self.streaming_list_widgets[stream_type].addItem(self.go_back_text)
+                match self.series_navigation_level:
+                    case 0: #LIVE/VOD/Series
+                        for entry in self.currently_loaded_streams[stream_type]:
+                            if text.lower() in entry['name'].lower():
+                                item = QListWidgetItem(entry['name'])
+                                item.setData(Qt.UserRole, entry)
 
-                    for episode in self.currently_loaded_entries['Episodes']:
-                        if text.lower() in episode['title'].lower():
-                            item = QListWidgetItem(episode['title'])
-                            item.setData(Qt.UserRole, episode)
+                                self.streaming_list_widgets[stream_type].addItem(item)
+                    case 1: #Seasons
+                        self.streaming_list_widgets[stream_type].addItem(self.go_back_text)
 
-                            self.streaming_list_widgets[stream_type].addItem(item)
+                        for season in self.currently_loaded_streams['Seasons'].keys():
+                            if text.lower() in f"season {season}":
+                                item = QListWidgetItem(f"Season {season}")
+                                item.setData(Qt.UserRole, self.currently_loaded_streams['Seasons'][season])
+
+                                self.streaming_list_widgets[stream_type].addItem(item)
+                    case 2: #Episodes
+                        self.streaming_list_widgets[stream_type].addItem(self.go_back_text)
+
+                        for episode in self.currently_loaded_streams['Episodes']:
+                            if text.lower() in episode['title'].lower():
+                                item = QListWidgetItem(episode['title'])
+                                item.setData(Qt.UserRole, episode)
+
+                                self.streaming_list_widgets[stream_type].addItem(item)
 
             self.set_progress_bar(100, f"Loaded search results")
         except Exception as e:
@@ -1508,7 +1562,8 @@ class IPTVPlayerApp(QMainWindow):
         external_player_command = ""
 
         config = configparser.ConfigParser()
-        config.read('config.ini')
+        config.read(self.user_data_file)
+
         if 'ExternalPlayer' in config:
             # self.external_player_command = config['ExternalPlayer'].get('Command', '')
             external_player_command = config['ExternalPlayer'].get('Command', '')
@@ -1517,12 +1572,15 @@ class IPTVPlayerApp(QMainWindow):
 
     def save_external_player_command(self):
         config = configparser.ConfigParser()
+        config.read(self.user_data_file)
+
         config['ExternalPlayer'] = {'Command': self.external_player_command}
-        with open('config.ini', 'w') as config_file:
+
+        with open(self.user_data_file, 'w') as config_file:
             config.write(config_file)
 
     def open_address_book(self):
-        dialog = AddressBookDialog(self)
+        dialog = AccountManager(self)
         dialog.exec_()
 
 def main():
