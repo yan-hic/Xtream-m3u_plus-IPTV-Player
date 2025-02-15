@@ -255,7 +255,7 @@ class IPTVPlayerApp(QMainWindow):
         #LIVE and VOD have no navigation levels.
         #Series has 0: Series, 1: Seasons, 2: Episodes
         self.series_navigation_level = 0
-        self.series_info_data = {}
+        self.finished_fetching_series_info = False
 
         self.search_history_list = []
         self.search_history_list_idx = 0
@@ -887,13 +887,19 @@ class IPTVPlayerApp(QMainWindow):
                 'vod_id': vod_id
             }
 
-            #Request series info
+            #Request vod info
             vod_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
 
-            # print(vod_info_resp.json())
+            #Get vod info data
+            vod_info_data = vod_info_resp.json()
+
+            #Get info and movie data
+            vod_info = vod_info_data.get('info', {})
+            vod_data = vod_info_data.get('movie_data', {})
 
             #Return series info data
-            return vod_info_resp.json()
+            # return vod_info_resp.json()
+            return vod_info, vod_data
         except Exception as e:
             print(f"Failed fetching movie info: {e}")
             return {}
@@ -1077,166 +1083,195 @@ class IPTVPlayerApp(QMainWindow):
 
     def streaming_item_clicked(self, clicked_item):
         try:
-            sender = self.sender()
+            print("single clicked")
 
-            print(clicked_item.text())
-
-            selected_item = sender.currentItem()
-            if not selected_item:
+            #Check if clicked item is valid
+            if not clicked_item:
                 return
 
-            selected_item_text = selected_item.text()
-            selected_item_data = selected_item.data(Qt.UserRole)
-            print(f"name = {selected_item_text}")
+            #Get clicked item data
+            clicked_item_text = clicked_item.text()
+            clicked_item_data = clicked_item.data(Qt.UserRole)
+            # print(f"name = {clicked_item_text}")
 
-            match self.series_navigation_level:
-                case 0:
-                    if clicked_item.text() == self.go_back_text:
-                        return
+            #Skip when back button or already loaded series info
+            if clicked_item.text() == self.go_back_text or self.series_navigation_level > 0:
+                return
 
-                    stream_type = selected_item_data['stream_type']
-                    print(f"level 0: {stream_type}")
+            #Get stream type
+            stream_type = clicked_item_data['stream_type']
 
-                    if stream_type == 'live':
-                        print(f"Starting EPG worker: {selected_item_data['stream_id']}")
-                        self.set_progress_bar(0, "Loading EPG data")
+            #Show EPG data if live tv clicked
+            if stream_type == 'live':
+                print(f"Starting EPG worker: {clicked_item_data['stream_id']}")
+                self.set_progress_bar(0, "Loading EPG data")
 
-                        #Set TV channel name in info window
-                        self.EPG_box_label.setText(f"{selected_item_data['name']}")
+                #Set TV channel name in info window
+                self.EPG_box_label.setText(f"{clicked_item_data['name']}")
 
-                        #Clear EPG data
-                        self.live_EPG_info.clear()
-                        item = QTreeWidgetItem(["...", "...", "...", "Loading EPG Data..."])
-                        self.live_EPG_info.addTopLevelItem(item)
+                #Clear EPG data
+                self.live_EPG_info.clear()
+                item = QTreeWidgetItem(["...", "...", "...", "Loading EPG Data..."])
+                self.live_EPG_info.addTopLevelItem(item)
 
-                        self.startEPGWorker(selected_item_data['stream_id'])
+                self.startEPGWorker(clicked_item_data['stream_id'])
 
-                    elif stream_type == 'movie':
-                        self.set_progress_bar(0, "Loading Movie info")
+            #Show movie info if movie clicked
+            elif stream_type == 'movie':
+                self.set_progress_bar(0, "Loading Movie info")
 
-                        vod_info = self.fetch_vod_info(selected_item_data['stream_id'])
-                        # print(vod_info)
+                #Get vod info and vod data
+                vod_info, vod_data = self.fetch_vod_info(clicked_item_data['stream_id'])
 
-                        info = vod_info['info']
+                #Get movie image url
+                movie_img_url = vod_info.get('movie_image', 0)
+                if movie_img_url:
+                    #Fetch image data
+                    movie_image = self.fetch_image(movie_img_url)
+                else:
+                    #Get replacement image for not found
+                    movie_image = QPixmap('Images/no_image.jpg')
 
-                        if not info:
-                            info = {}
+                #Set movie image
+                self.movies_info_box.cover.setPixmap(movie_image.scaledToWidth(self.movies_info_box.maxCoverWidth))
 
-                        movie_img_url = info.get('movie_image', 0)
-                        if movie_img_url:
-                            movie_image = self.fetch_image(movie_img_url)
-                        else:
-                            movie_image = QPixmap('Images/no_image.jpg')
+                #If vod data is valid
+                if vod_data:
+                    #Get movie name from vod_info, otherwise try name from vod_data
+                    movie_name = vod_info.get('name', vod_data.get('name', 'No name Available...'))
 
-                        # if not movie_image:
-                        #     print("no image available")
-                        #     #If no image available, set no-image placeholder image
-                        #     self.movies_info_box.cover.setPixmap('Images/No-Image-Placeholder.svg')
-                        # else:
-                        #Set cover to movie image
-                        # movie_image.scaledToWidth(self.movies_info_box.maxCoverWidth)
-                        self.movies_info_box.cover.setPixmap(movie_image.scaledToWidth(self.movies_info_box.maxCoverWidth))
-                        
-                        print(f"VOD info name: {info.get('name', 0)}")
+                    #If movie name is an empty string
+                    if not movie_name:
+                        movie_name = vod_data.get('name', 'No name Available...')
 
-                        if vod_info['movie_data']:
-                            print(f"VOD movie name: {vod_info['movie_data'].get('name', 0)}")
-                            movie_name = info.get('name', vod_info['movie_data'].get('name', 'No name Available...'))
+                        #Check again if movie name is an empty string
+                        if not movie_name:
+                            movie_name = 'No name Available...'
+                else:
+                    #Get movie name from vod info
+                    movie_name = vod_info.get('name', 'No name Available...')
 
-                            #If movie name is an empty string
-                            if not movie_name:
-                                movie_name = vod_info['movie_data'].get('name', 'No name Available...')
+                #Set movie info box texts
+                self.movies_info_box.name.setText(f"{movie_name}")
+                self.movies_info_box.release_date.setText(f"Release date: {vod_info.get('releasedate', '??-??-????')}")
+                self.movies_info_box.country.setText(f"Country: {vod_info.get('country', '?')}")
+                self.movies_info_box.genre.setText(f"Genre: {vod_info.get('genre', '?')}")
+                self.movies_info_box.duration.setText(f"Duration: {vod_info.get('duration', '??:??:??')}")
+                self.movies_info_box.rating.setText(f"Rating: {vod_info.get('rating', '?')}")
+                self.movies_info_box.director.setText(f"Director: {vod_info.get('director', 'director: ?')}")
+                self.movies_info_box.cast.setText(f"Cast: {vod_info.get('actors', 'actors: ?')}")
+                self.movies_info_box.description.setText(f"Description: {vod_info.get('description', 'description: ?')}")
+                self.movies_info_box.trailer.setText(f"Trailer: {vod_info.get('youtube_trailer', '?')}")
+                self.movies_info_box.tmdb.setText(f"TMBD: {vod_info.get('tmdb_id', '?')}")
 
-                                #Check again if movie name is an empty string
-                                if not movie_name:
-                                    movie_name = 'No name Available...'
-                        else:
-                            movie_name = info.get('name', 'No name Available...')
+                #Update progress bar
+                if not vod_info:
+                    print(f"VOD info was empty: {vod_info}")
+                    self.set_progress_bar(100, "Failed loading Movie info")
+                else:
+                    self.set_progress_bar(100, "Loaded Movie info")
 
+            #Show series info if series clicked
+            elif stream_type == 'series':
+                #Fetch series info data
+                series_info_data = self.fetch_series_info(clicked_item_data['series_id'])
 
-                        # self.movies_info_box.name.setText(info.get('name', vod_info['movie_data'].get('name', 'No name Available...')))
-                        # if not type(movie_name) == str:
-                        #     movie_name = 'No name Available...'
-
-                        self.movies_info_box.name.setText(f"{movie_name}")
-                        self.movies_info_box.release_date.setText(f"Release date: {info.get('releasedate', '??-??-????')}")
-                        self.movies_info_box.country.setText(f"Country: {info.get('country', '?')}")
-                        self.movies_info_box.genre.setText(f"Genre: {info.get('genre', '?')}")
-                        self.movies_info_box.duration.setText(f"Duration: {info.get('duration', '??:??:??')}")
-                        self.movies_info_box.rating.setText(f"Rating: {info.get('rating', '?')}")
-                        self.movies_info_box.director.setText(f"Director: {info.get('director', 'director: ?')}")
-                        self.movies_info_box.cast.setText(f"Cast: {info.get('actors', 'actors: ?')}")
-                        self.movies_info_box.description.setText(f"Description: {info.get('description', 'description: ?')}")
-                        self.movies_info_box.trailer.setText(f"Trailer: {info.get('youtube_trailer', '?')}")
-                        self.movies_info_box.imdb.setText(f"TMBD: {info.get('tmdb_id', '?')}")
-
-                        if not info:
-                            print(f"VOD info was empty: {info}")
-                            self.set_progress_bar(100, "Failed loading Movie info")
-                        else:
-                            self.set_progress_bar(100, "Loaded Movie info")
-
-                    elif stream_type == 'series':
-                        # self.series_navigation_level = 1
-                        # self.show_seasons(selected_item_data)
-                        pass
-
+                #If no series info data available
+                if not series_info_data:
+                    self.animate_progress(0, 100, "Failed fetching series info")
                     return
-                case 1:
-                    return
-                case 2:
-                    return
+
+                #Get series information data
+                series_info = series_info_data['info']
+
+                #Get movie image url
+                series_img_url = series_info.get('cover', 0)
+                if series_img_url:
+                    #Fetch image data
+                    series_image = self.fetch_image(series_img_url)
+                else:
+                    #Get replacement image for not found
+                    series_image = QPixmap('Images/no_image.jpg')
+
+                #Set series image
+                self.series_info_box.cover.setPixmap(series_image.scaledToWidth(self.series_info_box.maxCoverWidth))
+
+                #Get series name
+                series_name = series_info.get('name', 'No name Available...')
+                if not series_name:
+                    #If series name is empty set replacement
+                    series_name = 'No name Available...'
+
+                for key in series_info_data['episodes'].keys():
+                    print(f"season: {key}")
+
+                #Set series info box texts
+                self.series_info_box.name.setText(f"{series_name}")
+                self.series_info_box.release_date.setText(f"Release date: {series_info.get('releaseDate', '??-??-????')}")
+                self.series_info_box.genre.setText(f"Genre: {series_info.get('genre', '?')}")
+                self.series_info_box.num_seasons.setText(f"Number of seasons: ?")
+                self.series_info_box.duration.setText(f"Episode duration: {series_info.get('episode_run_time', '?')} min")
+                self.series_info_box.rating.setText(f"Rating: {series_info.get('rating', '?')}")
+                self.series_info_box.director.setText(f"Director: {series_info.get('director', 'director: ?')}")
+                self.series_info_box.cast.setText(f"Cast: {series_info.get('cast', '?')}")
+                self.series_info_box.description.setText(f"Description: {series_info.get('plot', 'description: ?')}")
+                self.series_info_box.trailer.setText(f"Trailer: {series_info.get('youtube_trailer', '?')}")
+                self.series_info_box.tmdb.setText(f"TMDB: {series_info.get('tmdb', '?')}")
+
+                #Update progress bar
+                if not series_info:
+                    print(f"Series info was empty: {series_info}")
+                    self.set_progress_bar(100, "Failed loading Series info")
+                else:
+                    self.set_progress_bar(100, "Loaded Series info")
+
         except Exception as e:
             print(f"Failed: {e}")
 
-    def streaming_item_double_clicked(self, double_clicked_item):
+    def streaming_item_double_clicked(self, clicked_item):
         try:
-            sender = self.sender()
+            print("Double clicked")
 
-            print(double_clicked_item.text())
-
-            selected_item = sender.currentItem()
-            if not selected_item:
+            #Check if clicked item is valid
+            if not clicked_item:
                 return
 
-            selected_item_text = selected_item.text()
-            selected_item_data = selected_item.data(Qt.UserRole)
-            print(f"name = {selected_item_text}")
+            #Get clicked item data
+            clicked_item_text = clicked_item.text()
+            clicked_item_data = clicked_item.data(Qt.UserRole)
 
+            #Have different action depending on the navigation level
             match self.series_navigation_level:
                 case 0: #Highest level, either LIVE, VOD or series
-                    if double_clicked_item.text() == self.go_back_text:
+                    if clicked_item_text == self.go_back_text:
                         return
 
-                    stream_type = selected_item_data['stream_type']
-                    print(f"level 0: {stream_type}")
+                    stream_type = clicked_item_data['stream_type']
 
                     if stream_type == 'live' or stream_type == 'movie':
-                        self.play_item(selected_item_data['url'])
+                        self.play_item(clicked_item_data['url'])
 
                     elif stream_type == 'series':
                         self.series_navigation_level = 1
-                        self.show_seasons(selected_item_data)
+                        self.show_seasons(clicked_item_data)
 
                 case 1: #Series seasons
-                    print("level 1")
-                    if selected_item_text == self.go_back_text:
+                    if clicked_item_text == self.go_back_text:
                         self.series_navigation_level = 0
                         self.go_back_to_level(self.series_navigation_level)
                         
                     else:
                         self.series_navigation_level = 2
-                        self.show_episodes(selected_item_data)
+                        self.show_episodes(clicked_item_data)
 
                 case 2: #Series episodes
-                    print("level 2")
-                    if selected_item_text == self.go_back_text:
+                    if clicked_item_text == self.go_back_text:
                         self.series_navigation_level = 1
                         self.go_back_to_level(self.series_navigation_level)
                         
                     else:
                         #Play episode
-                        self.play_item(selected_item_data['url'])
+                        self.play_item(clicked_item_data['url'])
 
         except Exception as e:
             print(f"failed: {e}")
@@ -1271,45 +1306,35 @@ class IPTVPlayerApp(QMainWindow):
     def show_seasons(self, seasons_data):
         self.set_progress_bar(0, "Loading items")
 
-        # #Fetch series info
-        # headers = {'User-Agent': CUSTOM_USER_AGENT}
-        # host_url = f"{self.server}/player_api.php"
-        # params = {
-        #     'username': self.username,
-        #     'password': self.password,
-        #     'action': 'get_series_info',
-        #     'series_id': seasons_data['series_id']
-        # }
-
-        # #Request series info
-        # series_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
-        # series_info_resp.raise_for_status()
-
-        # self.series_info_data = series_info_resp.json()
-
+        # #Fetch series info data
         series_info_data = self.fetch_series_info(seasons_data['series_id'])
 
+        #If no series info data available
         if not series_info_data:
             self.animate_progress(0, 100, "Failed fetching series info")
             return
 
-        #Show seasons in list
+        #Clear series list
         self.streaming_list_widgets['Series'].clear()
-        # QtWidgets.qApp.processEvents()
 
+        #Add go back item
         self.streaming_list_widgets['Series'].addItem(self.go_back_text)
 
-        # self.currently_loaded_entries['Seasons'] = self.series_info_data['episodes']
+        #Save currently loaded series data for search funcitonality
         self.currently_loaded_entries['Seasons'] = series_info_data['episodes']
 
-        # for season in self.series_info_data['episodes'].keys():
+        #Go through each season in the series info data.
+        #Note that 'episodes' is called, as this is the name given in the data. 
+        #When you look at the data you can see these are actually seasons.
         for season in series_info_data['episodes'].keys():
+            #Create season item
             item = QListWidgetItem(f"Season {season}")
-            # item.setData(Qt.UserRole, self.series_info_data['episodes'][season])
+
+            #Set season data to item
             item.setData(Qt.UserRole, series_info_data['episodes'][season])
             # item.setIcon(channel_icon)
 
-            # self.currently_loaded_entries['Seasons'].append(self.series_info_data['episodes'][season])
+            #Add season item to series list
             self.streaming_list_widgets['Series'].addItem(item)
 
         self.animate_progress(0, 100, "Loading finished")
@@ -1317,27 +1342,35 @@ class IPTVPlayerApp(QMainWindow):
     def show_episodes(self, episodes_data):
         self.set_progress_bar(0, "Loading items")
 
-        #Clear lists
+        #Clear series list
         self.streaming_list_widgets['Series'].clear()
-        # QtWidgets.qApp.processEvents()
 
+        #Add go back item
         self.streaming_list_widgets['Series'].addItem(self.go_back_text)
 
+        #Clear episodes list so it can be filled again
         self.currently_loaded_entries['Episodes'].clear()
 
         #Show episodes in list
         for episode in episodes_data:
+            #Create episode item
             item = QListWidgetItem(f"{episode['title']}")
 
+            #Make playable url
             container_extension = episode['container_extension']
             episode_id          = episode['id']
             playable_url = f"{self.server}/series/{self.username}/{self.password}/{episode_id}.{container_extension}"
 
+            #Add new 'url' key to episode data
             episode['url'] = playable_url
 
+            #Set data to the episode item
             item.setData(Qt.UserRole, episode)
 
+            #Append episode data to the currently loaded list for search functionality
             self.currently_loaded_entries['Episodes'].append(episode)
+
+            #Add episode item to series list
             self.streaming_list_widgets['Series'].addItem(item)
 
         self.animate_progress(0, 100, "Loading finished")
@@ -1353,36 +1386,6 @@ class IPTVPlayerApp(QMainWindow):
         else:
             self.animate_progress(0, 100, "No external player configured")
 
-    # def load_epg_data_async(self):
-    #     if not self.server or not self.username or not self.password:
-    #         # Can't load EPG if not logged in
-    #         return
-    #     http_method = self.get_http_method()
-    #     epg_worker = EPGWorker(self.server, self.username, self.password, http_method)
-    #     epg_worker.signals.finished.connect(self.on_epg_loaded)
-    #     epg_worker.signals.error.connect(self.on_epg_error)
-    #     self.threadpool.start(epg_worker)
-
-    # def on_epg_loaded(self, epg_data, channel_id_to_names):
-    #     print("EPG data loaded, processing now...")
-    #     self.epg_data = epg_data
-    #     self.channel_id_to_names = channel_id_to_names
-
-    #     name_to_id = {}
-    #     for cid, names in channel_id_to_names.items():
-    #         for n in names:
-    #             if n not in name_to_id:
-    #                 name_to_id[n] = cid
-    #     self.epg_name_map = name_to_id
-
-    #     # EPG done
-    #     # self.animate_progress(self.progress_bar.value(), 100, "EPG data loaded")
-    #     self.set_progress_bar(100, "EPG Data Loaded")
-
-    # def on_epg_error(self, error_message):
-    #     print(f"Error fetching EPG data: {error_message}")
-    #     self.animate_progress(self.progress_bar.value(), 100, "Error fetching EPG data")
-
     def choose_external_player(self):
         file_dialog = QFileDialog()
         file_dialog.setFileMode(QFileDialog.ExistingFile)
@@ -1397,15 +1400,6 @@ class IPTVPlayerApp(QMainWindow):
                 self.external_player_command = file_paths[0]
                 self.save_external_player_command()
                 print("External Player selected:", self.external_player_command)
-
-    # def show_context_menu(self, position):
-    #     sender = self.sender()
-    #     menu = QMenu()
-    #     sort_action = QAction("Sort Alphabetically", self)
-    #     sort_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_ArrowUp))
-    #     sort_action.triggered.connect(lambda: self.sort_streaming_list(sender))
-    #     menu.addAction(sort_action)
-    #     menu.exec_(sender.viewport().mapToGlobal(position))
 
     def KeyPressed(self, e, search_bar, stream_type):
         search_history_size = len(self.search_history_list)
@@ -1473,15 +1467,6 @@ class IPTVPlayerApp(QMainWindow):
                 search_bar.insert(e.text())
                 # e.accept()
 
-    # def update_list_after_search(self, list_widget, stream_type):
-    #     try:
-    #         print("emitted list widget")
-    #         # print(list_widget)
-
-    #         self.streaming_list_widgets[stream_type] = list_widget[0]
-    #     except Exception as e:
-    #         print(f"update after search failed: {e}")
-
     def search_in_list(self, stream_type, text):
         try:
             self.set_progress_bar(0, f"Loading search results...")
@@ -1519,12 +1504,6 @@ class IPTVPlayerApp(QMainWindow):
         except Exception as e:
             print(f"search in list failed: {e}")
 
-    # def get_list_widget(self, tab_name):
-    #     return self.streaming_list_widgets.get(tab_name)
-
-    # def get_category_list_widget(self, tab_name):
-    #     return self.category_streaming_list_widgets.get(tab_name)
-
     def load_external_player_command(self):
         external_player_command = ""
 
@@ -1541,15 +1520,6 @@ class IPTVPlayerApp(QMainWindow):
         config['ExternalPlayer'] = {'Command': self.external_player_command}
         with open('config.ini', 'w') as config_file:
             config.write(config_file)
-
-    # def on_epg_checkbox_toggled(self, state):
-    #     # If EPG is checked after we already logged in and no EPG data loaded, start it now.
-    #     if state == Qt.Checked:
-    #         if self.login_type == 'xtream' and self.server and self.username and self.password and not self.epg_data:
-    #             # Reset progress and load EPG
-    #             self.reset_progress_bar()
-    #             self.animate_progress(0, 50, "Loading EPG data...")
-    #             self.load_epg_data_async()
 
     def open_address_book(self):
         dialog = AddressBookDialog(self)

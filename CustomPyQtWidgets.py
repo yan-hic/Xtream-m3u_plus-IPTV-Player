@@ -37,20 +37,20 @@ class MovieInfoBox(QScrollArea):
         self.cover.setPixmap(self.cover_img.scaledToWidth(self.maxCoverWidth))
         self.cover.setFixedWidth(self.maxCoverWidth)
 
-        self.name           = QLabel("Ice Age")
-        self.release_date   = QLabel("2000")
-        self.country        = QLabel("English")
-        self.genre          = QLabel("Fun")
-        self.duration       = QLabel("1h40m")
-        self.rating         = QLabel("9.0")
-        self.director       = QLabel("Dave Grohl")
-        self.cast           = QLabel("Josh Peck")
-        self.description    = QLabel("Amazing movie about Ice Age time!")
-        self.trailer        = QLabel("https://youtube.com")
-        self.imdb           = QLabel("https://www.themoviedb.org/movie/11852")
+        self.name           = QLabel("No movie selected...")
+        self.release_date   = QLabel("Release date: ??-??-????")
+        self.country        = QLabel("Country: ?")
+        self.genre          = QLabel("Genre: ?")
+        self.duration       = QLabel("Duration: ??:??:??")
+        self.rating         = QLabel("Rating: ?")
+        self.director       = QLabel("Director: ?")
+        self.cast           = QLabel("Cast: ?")
+        self.description    = QLabel("Description: ?")
+        self.trailer        = QLabel("Trailer: ?")
+        self.tmdb           = QLabel("TMDB: ?")
 
         self.trailer.mousePressEvent    = self.TrailerClicked
-        self.imdb.mousePressEvent       = self.ImdbClicked
+        self.tmdb.mousePressEvent       = self.TmdbClicked
 
         self.name.setFont(QFont('Arial', 14, QFont.Bold))
 
@@ -64,7 +64,7 @@ class MovieInfoBox(QScrollArea):
         self.cast.setWordWrap(True)
         self.description.setWordWrap(True)
         self.trailer.setWordWrap(True)
-        self.imdb.setWordWrap(True)
+        self.tmdb.setWordWrap(True)
 
         self.layout.addWidget(self.name,            0, 0, 1, 2)
         self.layout.addWidget(self.cover,           1, 0, 10, 1)
@@ -77,24 +77,21 @@ class MovieInfoBox(QScrollArea):
         self.layout.addWidget(self.cast,            7, 1)
         self.layout.addWidget(self.description,     8, 1)
         self.layout.addWidget(self.trailer,         9, 1)
-        self.layout.addWidget(self.imdb,            10, 1)
+        self.layout.addWidget(self.tmdb,            10, 1)
 
         self.setWidget(self.widget)
 
     def TrailerClicked(self, e):
-        QDesktopServices.openUrl(QUrl(self.trailer.text()))
+        yt_code = self.trailer.text()[9:]
+        yt_url = f"https://www.youtube.com/watch?v={yt_code}"
 
-    def ImdbClicked(self, e):
-        QDesktopServices.openUrl(QUrl(self.imdb.text()))
+        QDesktopServices.openUrl(QUrl(yt_url))
 
-    def mousePressEvent(self, e):
-        # self.anchor = self.anchorAt(e.pos())
-        # if self.anchor:
-        #     QApplication.setOverrideCursor(Qt.PointingHandCursor)
-        print(f"flags: {e.flags()}")
-        print(f"type: {e.type()}")
-        # if e == self.trailer:
-        #     QDesktopServices.openUrl(QUrl(self.trailer.text))
+    def TmdbClicked(self, e):
+        tmdb_code = self.tmdb.text()[6:]
+        tmdb_url = f"https://www.themoviedb.org/movie/{tmdb_code}"
+
+        QDesktopServices.openUrl(QUrl(tmdb_url))
 
 class SeriesInfoBox(QScrollArea):
     def __init__(self):
@@ -121,27 +118,25 @@ class SeriesInfoBox(QScrollArea):
         self.cover.setPixmap(self.cover_img.scaledToWidth(self.maxCoverWidth))
         self.cover.setFixedWidth(self.maxCoverWidth)
 
-        self.name           = QLabel("Ice Age")
-        self.release_date   = QLabel("2000")
-        self.country        = QLabel("English")
-        self.genre          = QLabel("Fun")
-        self.num_seasons    = QLabel("6")
-        self.duration       = QLabel("1h40m")
-        self.rating         = QLabel("9.0")
-        self.director       = QLabel("Dave Grohl")
-        self.cast           = QLabel("Josh Peck")
-        self.description    = QLabel("Amazing movie about Ice Age time!")
-        self.trailer        = QLabel("https://youtube.com")
-        self.imdb           = QLabel("https://www.themoviedb.org/movie/11852")
+        self.name           = QLabel("No series selected...")
+        self.release_date   = QLabel("Release date: ??-??-????")
+        self.genre          = QLabel("Genre: ?")
+        self.num_seasons    = QLabel("Number of seasons: ?")
+        self.duration       = QLabel("Episode duration: ? min")
+        self.rating         = QLabel("Rating: ?")
+        self.director       = QLabel("Director: ?")
+        self.cast           = QLabel("Cast: ?")
+        self.description    = QLabel("Description: ?")
+        self.trailer        = QLabel("Trailer: ?")
+        self.tmdb           = QLabel("TMDB: ?")
 
         self.trailer.mousePressEvent    = self.TrailerClicked
-        self.imdb.mousePressEvent       = self.ImdbClicked
+        self.tmdb.mousePressEvent       = self.TmdbClicked
 
         self.name.setFont(QFont('Arial', 14, QFont.Bold))
 
         self.name.setWordWrap(True)
         self.release_date.setWordWrap(True)
-        self.country.setWordWrap(True)
         self.genre.setWordWrap(True)
         self.num_seasons.setWordWrap(True)
         self.duration.setWordWrap(True)
@@ -150,37 +145,33 @@ class SeriesInfoBox(QScrollArea):
         self.cast.setWordWrap(True)
         self.description.setWordWrap(True)
         self.trailer.setWordWrap(True)
-        self.imdb.setWordWrap(True)
+        self.tmdb.setWordWrap(True)
 
         self.layout.addWidget(self.name,            0, 0, 1, 2)
-        self.layout.addWidget(self.cover,           1, 0, 11, 1)
+        self.layout.addWidget(self.cover,           1, 0, 10, 1)
         self.layout.addWidget(self.release_date,    1, 1)
-        self.layout.addWidget(self.country,         2, 1)
-        self.layout.addWidget(self.genre,           3, 1)
-        self.layout.addWidget(self.num_seasons,     4, 1)
-        self.layout.addWidget(self.duration,        5, 1)
-        self.layout.addWidget(self.rating,          6, 1)
-        self.layout.addWidget(self.director,        7, 1)
-        self.layout.addWidget(self.cast,            8, 1)
-        self.layout.addWidget(self.description,     9, 1)
-        self.layout.addWidget(self.trailer,         10, 1)
-        self.layout.addWidget(self.imdb,            11, 1)
+        self.layout.addWidget(self.genre,           2, 1)
+        self.layout.addWidget(self.num_seasons,     3, 1)
+        self.layout.addWidget(self.duration,        4, 1)
+        self.layout.addWidget(self.rating,          5, 1)
+        self.layout.addWidget(self.director,        6, 1)
+        self.layout.addWidget(self.cast,            7, 1)
+        self.layout.addWidget(self.description,     8, 1)
+        self.layout.addWidget(self.trailer,         9, 1)
+        self.layout.addWidget(self.tmdb,            10, 1)
 
         self.setWidget(self.widget)
 
     def TrailerClicked(self, e):
-        QDesktopServices.openUrl(QUrl(self.trailer.text()))
+        yt_code = self.trailer.text()[9:]
+        yt_url = f"https://www.youtube.com/watch?v={yt_code}"
 
-    def ImdbClicked(self, e):
-        QDesktopServices.openUrl(QUrl(self.imdb.text()))
+        QDesktopServices.openUrl(QUrl(yt_url))
 
-    def mousePressEvent(self, e):
-        # self.anchor = self.anchorAt(e.pos())
-        # if self.anchor:
-        #     QApplication.setOverrideCursor(Qt.PointingHandCursor)
-        print(f"flags: {e.flags()}")
-        print(f"type: {e.type()}")
-        # if e == self.trailer:
-        #     QDesktopServices.openUrl(QUrl(self.trailer.text))
+    def TmdbClicked(self, e):
+        tmdb_code = self.tmdb.text()[6:]
+        tmdb_url = f"https://www.themoviedb.org/tv/{tmdb_code}"
+
+        QDesktopServices.openUrl(QUrl(tmdb_url))
 
 
