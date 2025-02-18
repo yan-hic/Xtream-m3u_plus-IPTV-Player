@@ -2,3 +2,7 @@ config.ini
 credentials.ini
 Backups/
 __pycache__/
+Pyinstaller/
+Raw IPTV data/
+all_cached_data.json
+userdata.ini
