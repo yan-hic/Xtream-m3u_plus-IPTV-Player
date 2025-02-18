@@ -358,6 +358,10 @@ class ImageFetcher(QRunnable):
                 image = QPixmap()
                 image.loadFromData(image_resp.content)  #Don't combine this with the previous line, then it doesn't work
 
+            #Check if Pixmap is valid
+            if image.isNull():
+                image = QPixmap('Images/no_image.jpg')
+
             #Emit image
             self.signals.finished.emit(image, self.stream_type)
         except Exception as e:

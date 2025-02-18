@@ -79,15 +79,19 @@ class MovieInfoBox(QScrollArea):
         self.setWidget(self.widget)
 
     def TrailerClicked(self, e):
+        #Get youtube code from text and append to url
         yt_code = self.trailer.text()[9:]
         yt_url = f"https://www.youtube.com/watch?v={yt_code}"
 
+        #Open URL
         QDesktopServices.openUrl(QUrl(yt_url))
 
     def TmdbClicked(self, e):
+        #Get TMDB code from text and append to url
         tmdb_code = self.tmdb.text()[6:]
         tmdb_url = f"https://www.themoviedb.org/movie/{tmdb_code}"
 
+        #Open URL
         QDesktopServices.openUrl(QUrl(tmdb_url))
 
 class SeriesInfoBox(QScrollArea):

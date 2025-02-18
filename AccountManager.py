@@ -146,12 +146,10 @@ class AccountManager(QtWidgets.QDialog):
 
                 if data.startswith('manual|'):
                     _, server, username, password = data.split('|')
-                    # self.parent.server_entry.setText(server)
-                    # self.parent.username_entry.setText(username)
-                    # self.parent.password_entry.setText(password)
-                    self.parent.server = server
-                    self.parent.username = username
-                    self.parent.password = password
+                    
+                    self.parent.server      = server
+                    self.parent.username    = username
+                    self.parent.password    = password
 
                     self.parent.login()
 
