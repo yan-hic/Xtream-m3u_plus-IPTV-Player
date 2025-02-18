@@ -28,7 +28,7 @@ from PyQt5.QtWidgets import (
 
 from AccountManager import AccountManager
 from CustomPyQtWidgets import MovieInfoBox, SeriesInfoBox
-from Threadpools import FetchDataWorker, SearchWorker, EPGWorker, MovieInfoFetcher, SeriesInfoFetcher
+from Threadpools import FetchDataWorker, SearchWorker, EPGWorker, MovieInfoFetcher, SeriesInfoFetcher, ImageFetcher
 
 CUSTOM_USER_AGENT = (
     "Connection: Keep-Alive User-Agent: okhttp/5.0.0-alpha.2 "
@@ -88,7 +88,7 @@ class IPTVPlayerApp(QMainWindow):
 
         #Create threadpool
         self.threadpool = QThreadPool()
-        self.threadpool.setMaxThreadCount(10)
+        self.threadpool.setMaxThreadCount(1)
 
         self.external_player_command = self.load_external_player_command()
 
@@ -770,15 +770,19 @@ class IPTVPlayerApp(QMainWindow):
     def process_vod_info(self, vod_info, vod_data):
         #Get movie image url
         movie_img_url = vod_info.get('movie_image', 0)
-        if movie_img_url:
-            #Fetch image data
-            movie_image = self.fetch_image(movie_img_url)
-        else:
-            #Get replacement image for not found
-            movie_image = QPixmap('Images/no_image.jpg')
 
-        #Set movie image
-        self.movies_info_box.cover.setPixmap(movie_image.scaledToWidth(self.movies_info_box.maxCoverWidth))
+        #Fetch movie image
+        self.fetch_image(movie_img_url, 'Movies')
+
+        # if movie_img_url:
+        #     #Fetch image data
+        #     movie_image = self.fetch_image(movie_img_url)
+        # else:
+        #     #Get replacement image for not found
+        #     movie_image = QPixmap('Images/no_image.jpg')
+
+        # #Set movie image
+        # self.movies_info_box.cover.setPixmap(movie_image.scaledToWidth(self.movies_info_box.maxCoverWidth))
 
         #If vod data is valid
         if vod_data:
@@ -805,7 +809,7 @@ class IPTVPlayerApp(QMainWindow):
         self.movies_info_box.rating.setText(f"Rating: {vod_info.get('rating', '?')}")
         self.movies_info_box.director.setText(f"Director: {vod_info.get('director', 'director: ?')}")
         self.movies_info_box.cast.setText(f"Cast: {vod_info.get('actors', 'actors: ?')}")
-        self.movies_info_box.description.setText(f"Description: {vod_info.get('description', 'description: ?')}")
+        self.movies_info_box.description.setText(f"Description: {vod_info.get('description', '?')}")
         self.movies_info_box.trailer.setText(f"Trailer: {vod_info.get('youtube_trailer', '?')}")
         self.movies_info_box.tmdb.setText(f"TMBD: {vod_info.get('tmdb_id', '?')}")
 
@@ -886,15 +890,19 @@ class IPTVPlayerApp(QMainWindow):
 
             #Get movie image url
             series_img_url = series_info.get('cover', 0)
-            if series_img_url:
-                #Fetch image data
-                series_image = self.fetch_image(series_img_url)
-            else:
-                #Get replacement image for not found
-                series_image = QPixmap('Images/no_image.jpg')
 
-            #Set series image
-            self.series_info_box.cover.setPixmap(series_image.scaledToWidth(self.series_info_box.maxCoverWidth))
+            #Fetch Series image
+            self.fetch_image(series_img_url, 'Series')
+
+            # if series_img_url:
+            #     #Fetch image data
+            #     series_image = self.fetch_image(series_img_url)
+            # else:
+            #     #Get replacement image for not found
+            #     series_image = QPixmap('Images/no_image.jpg')
+
+            # #Set series image
+            # self.series_info_box.cover.setPixmap(series_image.scaledToWidth(self.series_info_box.maxCoverWidth))
 
             #Get series name
             series_name = series_info.get('name', 'No name Available...')
@@ -902,19 +910,21 @@ class IPTVPlayerApp(QMainWindow):
                 #If series name is empty set replacement
                 series_name = 'No name Available...'
 
+            seasons = ""
             for key in series_info_data['episodes'].keys():
-                print(f"season: {key}")
+                # print(f"season: {key}")
+                seasons += f"{key}, "
 
             #Set series info box texts
             self.series_info_box.name.setText(f"{series_name}")
             self.series_info_box.release_date.setText(f"Release date: {series_info.get('releaseDate', '??-??-????')}")
             self.series_info_box.genre.setText(f"Genre: {series_info.get('genre', '?')}")
-            self.series_info_box.num_seasons.setText(f"Number of seasons: ?")
+            self.series_info_box.num_seasons.setText(f"Seasons: {seasons}")
             self.series_info_box.duration.setText(f"Episode duration: {series_info.get('episode_run_time', '?')} min")
             self.series_info_box.rating.setText(f"Rating: {series_info.get('rating', '?')}")
-            self.series_info_box.director.setText(f"Director: {series_info.get('director', 'director: ?')}")
+            self.series_info_box.director.setText(f"Director: {series_info.get('director', '?')}")
             self.series_info_box.cast.setText(f"Cast: {series_info.get('cast', '?')}")
-            self.series_info_box.description.setText(f"Description: {series_info.get('plot', 'description: ?')}")
+            self.series_info_box.description.setText(f"Description: {series_info.get('plot', '?')}")
             self.series_info_box.trailer.setText(f"Trailer: {series_info.get('youtube_trailer', '?')}")
             self.series_info_box.tmdb.setText(f"TMDB: {series_info.get('tmdb', '?')}")
 
@@ -925,36 +935,46 @@ class IPTVPlayerApp(QMainWindow):
             else:
                 self.set_progress_bar(100, "Loaded Series info")
 
-    def fetch_image(self, img_url):
-        try:
-            #Set header for request
-            headers = {'User-Agent': CUSTOM_USER_AGENT}
+    def fetch_image(self, img_url, stream_type):
+        image_fetcher = ImageFetcher(img_url, stream_type)
+        image_fetcher.signals.finished.connect(self.process_image_data)
+        image_fetcher.signals.error.connect(self.on_fetch_data_error)
+        self.threadpool.start(image_fetcher)
+        # try:
+        #     #Set header for request
+        #     headers = {'User-Agent': CUSTOM_USER_AGENT}
 
-            print(img_url)
+        #     #Request image
+        #     image_resp = requests.get(img_url, headers=headers, timeout=10)
 
-            #Request image
-            image_resp = requests.get(img_url, headers=headers, timeout=10)
+        #     #Check if response code is valid, otherwise set replacement image
+        #     resp_status = image_resp.status_code
+        #     if resp_status == 404:
+        #         image = QPixmap('Images/404_not_found.png')
 
-            # if (image_resp.content.find(("404 Not Found").encode("utf-8")) >= 0):
-            # if image_resp.content.find(b'Invalid URL') >= 0 or image_resp.content.find(b'404 Not Found') >= 0:
-            resp_status = image_resp.status_code
+        #     elif not resp_status == 200:
+        #         image = QPixmap('Images/no_image.jpg')
 
-            if resp_status == 404:
-                print("404 Not found")
-                image = QPixmap('Images/404_not_found.png')
-            elif not resp_status == 200:
-                print("Image request not ok")
-                image = QPixmap('Images/no_image.jpg')
-            else:
-                #Create QPixmap from image data
-                image = QPixmap()
-                image.loadFromData(image_resp.content)
+        #     else:
+        #         #Create QPixmap from image data
+        #         image = QPixmap()
+        #         image.loadFromData(image_resp.content)
 
-            #Return series info data
-            return image
-        except Exception as e:
-            print(f"Failed fetching image: {e}")
-            return QPixmap('Images/No-Image-Placeholder.svg')
+        #     #Return series info data
+        #     return image
+        # except Exception as e:
+        #     print(f"Failed fetching image: {e}")
+        #     return QPixmap('Images/no_image.jpg')
+
+    def process_image_data(self, image, stream_type):
+        if stream_type == 'Series':
+            #Set series image
+            self.series_info_box.cover.setPixmap(image.scaledToWidth(self.series_info_box.maxCoverWidth))
+        elif stream_type == 'Movies':
+            #Set movie image
+            self.movies_info_box.cover.setPixmap(image.scaledToWidth(self.movies_info_box.maxCoverWidth))
+        elif stream_type == 'Live':
+            pass
 
     def category_item_clicked(self, clicked_item):
         try:
@@ -1089,7 +1109,9 @@ class IPTVPlayerApp(QMainWindow):
 
     def streaming_item_clicked(self, clicked_item):
         try:
-            print("single clicked")
+            # print("single clicked")
+            print(f"num of active threads: {self.threadpool.activeThreadCount()}")
+            self.threadpool.clear()
 
             #Check if clicked item is valid
             if not clicked_item:
@@ -1125,6 +1147,22 @@ class IPTVPlayerApp(QMainWindow):
             #Show movie info if movie clicked
             elif stream_type == 'movie':
                 self.set_progress_bar(0, "Loading Movie info")
+
+                #Set loading image
+                self.movies_info_box.cover.setPixmap(QPixmap('Images/loading-icon.png').scaledToWidth(self.series_info_box.maxCoverWidth))
+
+                #Set movie info box texts
+                self.movies_info_box.name.setText(f"{clicked_item_data['name']}")
+                self.movies_info_box.release_date.setText(f"Release date: ...")
+                self.movies_info_box.country.setText(f"Country: ...")
+                self.movies_info_box.genre.setText(f"Genre: ...")
+                self.movies_info_box.duration.setText(f"Duration: ...")
+                self.movies_info_box.rating.setText(f"Rating: ...")
+                self.movies_info_box.director.setText(f"Director: ...")
+                self.movies_info_box.cast.setText(f"Cast: ...")
+                self.movies_info_box.description.setText(f"Description: ...")
+                self.movies_info_box.trailer.setText(f"Trailer: ...")
+                self.movies_info_box.tmdb.setText(f"TMBD: ...")
 
                 #Get vod info and vod data
                 # vod_info, vod_data = self.fetch_vod_info(clicked_item_data['stream_id'])
@@ -1181,6 +1219,22 @@ class IPTVPlayerApp(QMainWindow):
             #Show series info if series clicked
             elif stream_type == 'series':
                 self.set_progress_bar(0, "Loading Series info")
+
+                #Set loading image
+                self.series_info_box.cover.setPixmap(QPixmap('Images/loading-icon.png').scaledToWidth(self.series_info_box.maxCoverWidth))
+
+                #Set series info box texts
+                self.series_info_box.name.setText(f"{clicked_item_data['name']}")
+                self.series_info_box.release_date.setText(f"Release date: ...")
+                self.series_info_box.genre.setText(f"Genre: ...")
+                self.series_info_box.num_seasons.setText(f"Seasons: ...")
+                self.series_info_box.duration.setText(f"Episode duration: ... min")
+                self.series_info_box.rating.setText(f"Rating: ...")
+                self.series_info_box.director.setText(f"Director: ...")
+                self.series_info_box.cast.setText(f"Cast: ...")
+                self.series_info_box.description.setText(f"Description: ...")
+                self.series_info_box.trailer.setText(f"Trailer: ...")
+                self.series_info_box.tmdb.setText(f"TMDB: ...")
 
                 #Fetch series info data
                 # series_info_data = self.fetch_series_info(clicked_item_data['series_id'])
@@ -1240,7 +1294,7 @@ class IPTVPlayerApp(QMainWindow):
 
     def streaming_item_double_clicked(self, clicked_item):
         try:
-            print("Double clicked")
+            # print("Double clicked")
 
             #Check if clicked item is valid
             if not clicked_item:

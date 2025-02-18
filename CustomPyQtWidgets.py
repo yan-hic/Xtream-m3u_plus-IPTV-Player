@@ -115,7 +115,7 @@ class SeriesInfoBox(QScrollArea):
         self.name           = QLabel("No series selected...")
         self.release_date   = QLabel("Release date: ??-??-????")
         self.genre          = QLabel("Genre: ?")
-        self.num_seasons    = QLabel("Number of seasons: ?")
+        self.num_seasons    = QLabel("Seasons: ?")
         self.duration       = QLabel("Episode duration: ? min")
         self.rating         = QLabel("Rating: ?")
         self.director       = QLabel("Director: ?")

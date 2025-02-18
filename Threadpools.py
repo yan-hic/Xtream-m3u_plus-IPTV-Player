@@ -267,6 +267,13 @@ class MovieInfoFetcher(QRunnable):
             vod_info = vod_info_data.get('info', {})
             vod_data = vod_info_data.get('movie_data', {})
 
+            #Check if the variable types are valid
+            if not isinstance(vod_info, dict):
+                vod_info = {}
+
+            if not isinstance(vod_data, dict):
+                vod_data = {}
+
             #Return movie info data
             self.signals.finished.emit(vod_info, vod_data)
         except Exception as e:
@@ -303,12 +310,64 @@ class SeriesInfoFetcher(QRunnable):
             #Request series info
             series_info_resp = requests.get(host_url, params=params, headers=headers, timeout=10)
 
+            #Get series info data
+            series_info_data = series_info_resp.json()
+
+            #Check if the variable type is valid
+            if not isinstance(series_info_data, dict):
+                series_info_data = {}
+
             #Return series info data
-            self.signals.finished.emit(series_info_resp.json(), self.is_show_request)
+            self.signals.finished.emit(series_info_data, self.is_show_request)
         except Exception as e:
             print(f"Failed fetching series info: {e}")
             self.signals.error.emit(str(e))
         
+class ImageFetcherSignals(QObject):
+    finished    = pyqtSignal(QPixmap, str)
+    error       = pyqtSignal(str)
+
+class ImageFetcher(QRunnable):
+    def __init__(self, img_url, stream_type):
+        super().__init__()
+        self.img_url        = img_url
+        self.stream_type    = stream_type
+        self.signals        = ImageFetcherSignals()
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            #Set header for request
+            headers = {'User-Agent': CUSTOM_USER_AGENT}
+
+            #Request image
+            image_resp = requests.get(self.img_url, headers=headers, timeout=10)
+
+            #Check if response code is valid, otherwise set replacement image
+            resp_status = image_resp.status_code
+            if resp_status == 404:
+                #Set 404 error as image
+                image = QPixmap('Images/404_not_found.png')
+
+            elif not resp_status == 200:
+                #Set no image
+                image = QPixmap('Images/no_image.jpg')
+
+            else:
+                #Create QPixmap from image data
+                image = QPixmap()
+                image.loadFromData(image_resp.content)  #Don't combine this with the previous line, then it doesn't work
+
+            #Emit image
+            self.signals.finished.emit(image, self.stream_type)
+        except Exception as e:
+            print(f"Failed fetching image: {e}")
+
+            #Emit no image placeholder
+            image = QPixmap('Images/no_image.jpg')
+            self.signals.finished.emit(image, self.stream_type)
+            self.signals.error.emit(str(e))
+
 class SearchWorkerSignals(QObject):
     list_widget = pyqtSignal(list, str)
     error = pyqtSignal(str)
