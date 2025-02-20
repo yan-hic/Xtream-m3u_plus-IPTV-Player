@@ -43,6 +43,13 @@ class IPTVPlayerApp(QMainWindow):
 
         self.user_data_file = 'userdata.ini'
 
+        self.path_to_window_icon    = path.abspath(path.join(path.dirname(__file__), 'Images/TV_icon.ico'))
+        self.path_to_no_img         = path.abspath(path.join(path.dirname(__file__), 'Images/no_image.jpg'))
+        self.path_to_loading_img    = path.abspath(path.join(path.dirname(__file__), 'Images/loading-icon.png'))
+        self.path_to_404_img        = path.abspath(path.join(path.dirname(__file__), 'Images/404_not_found.png'))
+
+        self.setWindowIcon(QIcon(self.path_to_window_icon))
+
         self.default_font_size      = 10
         self.go_back_text           = " Go back"
         self.all_categories_text    = " All"
@@ -362,8 +369,8 @@ class IPTVPlayerApp(QMainWindow):
         self.live_EPG_info_box_layout.addWidget(self.live_EPG_info)
 
         #Create Movies and Series info box
-        self.movies_info_box = MovieInfoBox()
-        self.series_info_box = SeriesInfoBox()
+        self.movies_info_box = MovieInfoBox(self)
+        self.series_info_box = SeriesInfoBox(self)
 
     def initHomeTab(self):
         #Create lists to show previously watched content
@@ -462,15 +469,19 @@ class IPTVPlayerApp(QMainWindow):
 
                 if data.startswith('manual|'):
                     _, server, username, password = data.split('|')
-                    self.server_entry.setText(server)
-                    self.username_entry.setText(username)
-                    self.password_entry.setText(password)
+
+                    self.server     = server
+                    self.username   = username
+                    self.password   = password
+
                     self.login()
 
                 elif data.startswith('m3u_plus|'):
                     _, m3u_url = data.split('|', 1)
-                    self.extract_credentials_from_m3u_plus_url(m3u_url)
-                    self.login()
+
+                    #Get credentials from M3U plus url and check if valid
+                    if self.extract_credentials_from_m3u_plus_url(m3u_url):
+                        self.login()
 
     def toggle_keep_on_top(self, state):
         if state == Qt.Checked:
@@ -510,17 +521,25 @@ class IPTVPlayerApp(QMainWindow):
             pattern = r'(http[s]?://[^/]+)/get\.php\?username=([^&]*)&password=([^&]*)&type=(m3u_plus|m3u|&output=m3u8)'
             match = re.match(pattern, url)
             if match:
-                self.server = match.group(1)
-                self.username = match.group(2)
-                self.password = match.group(3)
-                # self.server_entry.setText(self.server)
-                # self.username_entry.setText(self.username)
-                # self.password_entry.setText(self.password)
+                self.server     = match.group(1)
+                self.username   = match.group(2)
+                self.password   = match.group(3)
+
+                return True
             else:
                 self.animate_progress(0, 100, "Invalid m3u_plus or m3u URL")
+
+                dlg = QMessageBox(self)
+                dlg.setWindowTitle("Error!")
+                dlg.setText("M3U plus URL is invalid!\nPlease enter valid URL")
+                dlg.exec()
+
+                return False
         except Exception as e:
             print(f"Error extracting credentials: {e}")
             self.animate_progress(0, 100, "Error extracting credentials")
+
+            return False
 
     def set_progress_text(self, text):
         self.progress_bar.setFormat(text)
@@ -556,10 +575,7 @@ class IPTVPlayerApp(QMainWindow):
             dlg = QMessageBox(self)
             dlg.setWindowTitle("Error!")
             dlg.setText("Please fill in all fields to login!")
-            btn = dlg.exec()
-
-            if btn == QMessageBox.Ok:
-                print("OK!")
+            dlg.exec()
 
             return
 
@@ -569,7 +585,7 @@ class IPTVPlayerApp(QMainWindow):
         self.set_progress_bar(0, "Going to fetch data...")
 
     def fetch_data_thread(self):
-        dataWorker = FetchDataWorker(self.server, self.username, self.password)
+        dataWorker = FetchDataWorker(self.server, self.username, self.password, self)
         dataWorker.signals.finished.connect(self.process_data)
         dataWorker.signals.error.connect(self.on_fetch_data_error)
         dataWorker.signals.progress_bar.connect(self.animate_progress)
@@ -819,13 +835,13 @@ class IPTVPlayerApp(QMainWindow):
 
             #Update progress bar
             if not series_info:
-                print(f"Series info was empty: {series_info}")
+                # print(f"Series info was empty: {series_info}")
                 self.set_progress_bar(100, "Failed loading Series info")
             else:
                 self.set_progress_bar(100, "Loaded Series info")
 
     def fetch_image(self, img_url, stream_type):
-        image_fetcher = ImageFetcher(img_url, stream_type)
+        image_fetcher = ImageFetcher(img_url, stream_type, self)
         image_fetcher.signals.finished.connect(self.process_image_data)
         image_fetcher.signals.error.connect(self.on_fetch_data_error)
         self.threadpool.start(image_fetcher)
@@ -976,8 +992,7 @@ class IPTVPlayerApp(QMainWindow):
 
     def streaming_item_clicked(self, clicked_item):
         try:
-            # print("single clicked")
-            print(f"num of active threads: {self.threadpool.activeThreadCount()}")
+            #Clear threadpool
             self.threadpool.clear()
 
             #Check if clicked item is valid
@@ -998,7 +1013,6 @@ class IPTVPlayerApp(QMainWindow):
 
             #Show EPG data if live tv clicked
             if stream_type == 'live':
-                print(f"Starting EPG worker: {clicked_item_data['stream_id']}")
                 self.set_progress_bar(0, "Loading EPG data")
 
                 #Set TV channel name in info window
@@ -1016,7 +1030,7 @@ class IPTVPlayerApp(QMainWindow):
                 self.set_progress_bar(0, "Loading Movie info")
 
                 #Set loading image
-                self.movies_info_box.cover.setPixmap(QPixmap('Images/loading-icon.png').scaledToWidth(self.series_info_box.maxCoverWidth))
+                self.movies_info_box.cover.setPixmap(QPixmap(self.path_to_loading_img).scaledToWidth(self.series_info_box.maxCoverWidth))
 
                 #Set movie info box texts
                 self.movies_info_box.name.setText(f"{clicked_item_data['name']}")
@@ -1039,7 +1053,7 @@ class IPTVPlayerApp(QMainWindow):
                 self.set_progress_bar(0, "Loading Series info")
 
                 #Set loading image
-                self.series_info_box.cover.setPixmap(QPixmap('Images/loading-icon.png').scaledToWidth(self.series_info_box.maxCoverWidth))
+                self.series_info_box.cover.setPixmap(QPixmap(self.path_to_loading_img).scaledToWidth(self.series_info_box.maxCoverWidth))
 
                 #Set series info box texts
                 self.series_info_box.name.setText(f"{clicked_item_data['name']}")
@@ -1188,7 +1202,7 @@ class IPTVPlayerApp(QMainWindow):
     def play_item(self, url):
         if self.external_player_command:
             try:
-                print(f"Going to play: {url}")
+                # print(f"Going to play: {url}")
                 self.animate_progress(0, 100, "Loading player for streaming")
 
                 subprocess.Popen([self.external_player_command, url])
@@ -1226,6 +1240,8 @@ class IPTVPlayerApp(QMainWindow):
                 self.external_player_command = file_paths[0]
 
                 self.save_external_player_command()
+
+                self.animate_progress(0, 100, "Selected external media player")
 
     def SearchBarKeyPressed(self, e, search_bar, list_content_type, stream_type, list_widgets, history_list, history_list_idx):
         search_history_size = len(history_list)
@@ -1309,6 +1325,11 @@ class IPTVPlayerApp(QMainWindow):
 
                         self.category_list_widgets[stream_type].addItem(item)
 
+                #Check if no search results found
+                num_of_items = self.category_list_widgets[stream_type].count()
+                if not num_of_items:
+                    self.category_list_widgets[stream_type].addItem("No search results found...")
+
             #If searching in streaming content list
             elif list_content_type == 'streaming':
                 self.streaming_list_widgets[stream_type].clear()
@@ -1339,6 +1360,11 @@ class IPTVPlayerApp(QMainWindow):
                                 item.setData(Qt.UserRole, episode)
 
                                 self.streaming_list_widgets[stream_type].addItem(item)
+
+                #Check if no search results found
+                num_of_items = self.streaming_list_widgets[stream_type].count()
+                if not (num_of_items - (self.series_navigation_level > 0)):
+                    self.streaming_list_widgets[stream_type].addItem("No search results found...")
 
             self.set_progress_bar(100, f"Loaded search results")
         except Exception as e:

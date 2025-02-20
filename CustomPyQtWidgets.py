@@ -12,9 +12,13 @@ from PyQt5.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QTreeView, QScrollArea
 )
 
+from os import path
+
 class MovieInfoBox(QScrollArea):
-    def __init__(self):
+    def __init__(self, parent=None):
         super().__init__()
+
+        self.parent = parent
 
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -29,7 +33,7 @@ class MovieInfoBox(QScrollArea):
         self.maxCoverWidth = 200
 
         self.cover          = QLabel()
-        self.cover_img      = QPixmap('Images/no_image.jpg')
+        self.cover_img      = QPixmap(self.parent.path_to_no_img)
         self.cover.setAlignment(Qt.AlignTop)
         self.cover.setPixmap(self.cover_img.scaledToWidth(self.maxCoverWidth))
         self.cover.setFixedWidth(self.maxCoverWidth)
@@ -95,8 +99,10 @@ class MovieInfoBox(QScrollArea):
         QDesktopServices.openUrl(QUrl(tmdb_url))
 
 class SeriesInfoBox(QScrollArea):
-    def __init__(self):
+    def __init__(self, parent=None):
         super().__init__()
+
+        self.parent = parent
 
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -111,7 +117,7 @@ class SeriesInfoBox(QScrollArea):
         self.maxCoverWidth = 200
 
         self.cover          = QLabel()
-        self.cover_img      = QPixmap('Images/no_image.jpg')
+        self.cover_img      = QPixmap(self.parent.path_to_no_img)
         self.cover.setAlignment(Qt.AlignTop)
         self.cover.setPixmap(self.cover_img.scaledToWidth(self.maxCoverWidth))
         self.cover.setFixedWidth(self.maxCoverWidth)

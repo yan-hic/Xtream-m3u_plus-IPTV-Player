@@ -39,12 +39,13 @@ class FetchDataWorkerSignals(QObject):
     progress_bar    = pyqtSignal(int, int, str)
 
 class FetchDataWorker(QRunnable):
-    def __init__(self, server, username, password):
+    def __init__(self, server, username, password, parent=None):
         super().__init__()
-        self.server = server
-        self.username = username
-        self.password = password
-        self.signals = FetchDataWorkerSignals()
+        self.server     = server
+        self.username   = username
+        self.password   = password
+        self.parent     = parent
+        self.signals    = FetchDataWorkerSignals()
 
     @pyqtSlot()
     def run(self):
@@ -91,7 +92,10 @@ class FetchDataWorker(QRunnable):
                 with open("all_cached_data.json", 'r') as cache_file:
                     cached_data = json.load(cache_file)
 
-            if True:    #Set to true to get data from cached data. For testing purposes only
+            config = configparser.ConfigParser()
+            config.read(self.parent.user_data_file)
+
+            if 'Debug' in config and config['Debug']['load_with_cache'] == 'True':   #For testing purposes only
                 categories_per_stream_type['LIVE'] = cached_data['LIVE categories']
                 categories_per_stream_type['Movies'] = cached_data['Movies categories']
                 categories_per_stream_type['Series'] = cached_data['Series categories']
@@ -328,10 +332,11 @@ class ImageFetcherSignals(QObject):
     error       = pyqtSignal(str)
 
 class ImageFetcher(QRunnable):
-    def __init__(self, img_url, stream_type):
+    def __init__(self, img_url, stream_type, parent=None):
         super().__init__()
         self.img_url        = img_url
         self.stream_type    = stream_type
+        self.parent         = parent
         self.signals        = ImageFetcherSignals()
 
     @pyqtSlot()
@@ -347,11 +352,11 @@ class ImageFetcher(QRunnable):
             resp_status = image_resp.status_code
             if resp_status == 404:
                 #Set 404 error as image
-                image = QPixmap('Images/404_not_found.png')
+                image = QPixmap(self.parent.path_to_404_img)
 
             elif not resp_status == 200:
                 #Set no image
-                image = QPixmap('Images/no_image.jpg')
+                image = QPixmap(self.parent.path_to_no_img)
 
             else:
                 #Create QPixmap from image data
@@ -360,7 +365,7 @@ class ImageFetcher(QRunnable):
 
             #Check if Pixmap is valid
             if image.isNull():
-                image = QPixmap('Images/no_image.jpg')
+                image = QPixmap(self.parent.path_to_no_img)
 
             #Emit image
             self.signals.finished.emit(image, self.stream_type)
@@ -368,7 +373,7 @@ class ImageFetcher(QRunnable):
             print(f"Failed fetching image: {e}")
 
             #Emit no image placeholder
-            image = QPixmap('Images/no_image.jpg')
+            image = QPixmap(self.parent.path_to_no_img)
             self.signals.finished.emit(image, self.stream_type)
             self.signals.error.emit(str(e))
 

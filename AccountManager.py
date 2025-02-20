@@ -155,9 +155,10 @@ class AccountManager(QtWidgets.QDialog):
 
                 elif data.startswith('m3u_plus|'):
                     _, m3u_url = data.split('|', 1)
-                    self.parent.extract_credentials_from_m3u_plus_url(m3u_url)
 
-                    self.parent.login()
+                    #Get credentials from M3U plus url and check if valid
+                    if self.parent.extract_credentials_from_m3u_plus_url(m3u_url):
+                        self.parent.login()
 
                 self.accept()
 
@@ -188,8 +189,11 @@ class AddAccountDialog(QtWidgets.QDialog):
         self.setWindowTitle("Add Credentials")
         layout = QtWidgets.QVBoxLayout(self)
 
+        self.manual_entry_name      = "Manual/Xtream entry"
+        self.m3u_plus_entry_name    = "M3U_plus URL entry"
+
         self.method_selector = QtWidgets.QComboBox()
-        self.method_selector.addItems(["Manual/Xtream entry", "M3U_plus URL entry"])
+        self.method_selector.addItems([self.manual_entry_name, self.m3u_plus_entry_name])
         layout.addWidget(QtWidgets.QLabel("Select Method:"))
         layout.addWidget(self.method_selector)
 
@@ -245,7 +249,7 @@ class AddAccountDialog(QtWidgets.QDialog):
     def validate_and_accept(self):
         method = self.method_selector.currentText()
 
-        if method == "Manual Entry":
+        if method == self.manual_entry_name:
             name        = self.name_entry_manual.text().strip()
             server      = self.server_entry.text().strip()
             username    = self.username_entry.text().strip()
@@ -269,7 +273,7 @@ class AddAccountDialog(QtWidgets.QDialog):
     def get_credentials(self):
         method = self.method_selector.currentText()
 
-        if method == "Manual Entry":
+        if method == self.manual_entry_name:
             name        = self.name_entry_manual.text().strip()
             server      = self.server_entry.text().strip()
             username    = self.username_entry.text().strip()
