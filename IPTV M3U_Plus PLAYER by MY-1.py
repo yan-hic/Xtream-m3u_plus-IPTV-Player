@@ -35,6 +35,10 @@ CUSTOM_USER_AGENT = (
     "Accept-Encoding: gzip, deflate"
 )
 
+is_windows  = sys.platform.startswith('win')
+is_mac      = sys.platform.startswith('darwin')
+is_linux    = sys.platform.startswith('linux')
+
 class IPTVPlayerApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -47,6 +51,20 @@ class IPTVPlayerApp(QMainWindow):
         self.path_to_no_img         = path.abspath(path.join(path.dirname(__file__), 'Images/no_image.jpg'))
         self.path_to_loading_img    = path.abspath(path.join(path.dirname(__file__), 'Images/loading-icon.png'))
         self.path_to_404_img        = path.abspath(path.join(path.dirname(__file__), 'Images/404_not_found.png'))
+
+        self.path_to_home_icon      = path.abspath(path.join(path.dirname(__file__), 'Images/home_tab_icon.ico'))
+        self.path_to_live_icon      = path.abspath(path.join(path.dirname(__file__), 'Images/tv_tab_icon.ico'))
+        self.path_to_movies_icon    = path.abspath(path.join(path.dirname(__file__), 'Images/movies_tab_icon.ico'))
+        self.path_to_series_icon    = path.abspath(path.join(path.dirname(__file__), 'Images/series_tab_icon.ico'))
+        self.path_to_favorites_icon = path.abspath(path.join(path.dirname(__file__), 'Images/favorite_tab_icon.ico'))
+        self.path_to_info_icon      = path.abspath(path.join(path.dirname(__file__), 'Images/info_tab_icon.ico'))
+        self.path_to_settings_icon  = path.abspath(path.join(path.dirname(__file__), 'Images/settings_tab_icon.ico'))
+
+        self.path_to_search_icon    = path.abspath(path.join(path.dirname(__file__), 'Images/search_bar_icon.ico'))
+        self.path_to_go_back_icon   = path.abspath(path.join(path.dirname(__file__), 'Images/go_back_icon.ico'))
+
+        self.path_to_account_icon       = path.abspath(path.join(path.dirname(__file__), 'Images/account_manager_icon.ico'))
+        self.path_to_mediaplayer_icon   = path.abspath(path.join(path.dirname(__file__), 'Images/film_camera_icon.ico'))
 
         self.setWindowIcon(QIcon(self.path_to_window_icon))
 
@@ -66,6 +84,15 @@ class IPTVPlayerApp(QMainWindow):
         self.category_search_history_list       = []
         self.category_search_history_list_idx   = [0]
         self.max_search_history_size            = 30
+
+        #Previous clicked item for preventing loading the same item multiple times
+        self.prev_clicked_category_item = {
+            'LIVE': 0,
+            'Movies': 0,
+            'Series': 0
+        }
+        self.prev_clicked_streaming_item        = 0
+        self.prev_double_clicked_streaming_item = 0
 
         self.categories_per_stream_type = {}
         self.entries_per_stream_type = {
@@ -155,21 +182,21 @@ class IPTVPlayerApp(QMainWindow):
         self.tab_icon_size = QSize(24, 24)
 
         #Create tab icons
-        self.home_icon      = self.style().standardIcon(QtWidgets.QStyle.SP_DesktopIcon)
-        self.live_icon      = self.style().standardIcon(QtWidgets.QStyle.SP_MediaVolume)
-        self.movies_icon    = self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay)
-        self.series_icon    = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
-        self.favorites_icon = self.style().standardIcon(QtWidgets.QStyle.SP_DialogApplyButton)
-        self.info_icon      = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
-        self.settings_icon  = self.style().standardIcon(QtWidgets.QStyle.SP_DriveCDIcon)
+        self.home_icon      = QIcon(self.path_to_home_icon)
+        self.live_icon      = QIcon(self.path_to_live_icon)
+        self.movies_icon    = QIcon(self.path_to_movies_icon)
+        self.series_icon    = QIcon(self.path_to_series_icon)
+        self.favorites_icon = QIcon(self.path_to_favorites_icon)
+        self.info_icon      = QIcon(self.path_to_info_icon)
+        self.settings_icon  = QIcon(self.path_to_settings_icon)
 
-        #Create list entry icons
-        self.live_channel_icon      = self.style().standardIcon(QtWidgets.QStyle.SP_MediaVolume)
-        self.movies_channel_icon    = self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay)
-        self.series_channel_icon    = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
+        #Create settings buttons icons
+        self.account_manager_icon   = QIcon(self.path_to_account_icon)
+        self.mediaplayer_icon       = QIcon(self.path_to_mediaplayer_icon)
 
         #Create misc icons
-        self.go_back_icon           = self.style().standardIcon(QtWidgets.QStyle.SP_ArrowBack)
+        self.search_icon    = QIcon(self.path_to_search_icon)
+        self.go_back_icon   = QIcon(self.path_to_go_back_icon)
 
     def initTabWidget(self):
         #Create tab widget
@@ -248,10 +275,10 @@ class IPTVPlayerApp(QMainWindow):
             self.streaming_search_bar_series, 'streaming', 'Series', self.streaming_list_widgets, self.streaming_search_history_list, self.streaming_search_history_list_idx)
 
     def add_search_icon(self, search_bar):
-        search_icon = QIcon.fromTheme("edit-find")
-        if search_icon.isNull():
-            search_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogContentsView)
-        search_bar.addAction(search_icon, QLineEdit.LeadingPosition)
+        if self.search_icon.isNull():
+            self.search_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogContentsView)
+
+        search_bar.addAction(self.search_icon, QLineEdit.LeadingPosition)
 
     def initIPTVinfo(self):
         self.iptv_info_text = QTextEdit()
@@ -411,12 +438,12 @@ class IPTVPlayerApp(QMainWindow):
         self.settings_layout.setAlignment(Qt.AlignTop)
 
         self.address_book_button = QPushButton("IPTV accounts")
-        self.address_book_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon))
+        self.address_book_button.setIcon(self.account_manager_icon)
         self.address_book_button.setToolTip("Manage IPTV accounts")
         self.address_book_button.clicked.connect(self.open_address_book)
 
         self.choose_player_button = QPushButton("Choose Media Player")
-        self.choose_player_button.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay))
+        self.choose_player_button.setIcon(self.mediaplayer_icon)
         self.choose_player_button.setToolTip("Set the Media Player used for watching content, use e.g. VLC or SMPlayer")
         self.choose_player_button.clicked.connect(self.choose_external_player)
 
@@ -820,18 +847,29 @@ class IPTVPlayerApp(QMainWindow):
                 # print(f"season: {key}")
                 seasons += f"{key}, "
 
+            #Get strings from series info
+            release_date    = series_info.get('releaseDate', '????-??-??')
+            genre           = series_info.get('genre', '?')
+            duration        = series_info.get('episode_run_time', '?')
+            rating          = series_info.get('rating', '?')
+            director        = series_info.get('director', '?')
+            cast            = series_info.get('cast', '?')
+            plot            = series_info.get('plot', '?')
+            trailer         = series_info.get('youtube_trailer', '?')
+            tmdb            = series_info.get('tmdb', '?')
+
             #Set series info box texts
             self.series_info_box.name.setText(f"{series_name}")
-            self.series_info_box.release_date.setText(f"Release date: {series_info.get('releaseDate', '??-??-????')}")
-            self.series_info_box.genre.setText(f"Genre: {series_info.get('genre', '?')}")
+            self.series_info_box.release_date.setText(f"Release date: {release_date if release_date else '????-??-??'}")
+            self.series_info_box.genre.setText(f"Genre: {genre if genre else '?'}")
             self.series_info_box.num_seasons.setText(f"Seasons: {seasons}")
-            self.series_info_box.duration.setText(f"Episode duration: {series_info.get('episode_run_time', '?')} min")
-            self.series_info_box.rating.setText(f"Rating: {series_info.get('rating', '?')}")
-            self.series_info_box.director.setText(f"Director: {series_info.get('director', '?')}")
-            self.series_info_box.cast.setText(f"Cast: {series_info.get('cast', '?')}")
-            self.series_info_box.description.setText(f"Description: {series_info.get('plot', '?')}")
-            self.series_info_box.trailer.setText(f"Trailer: {series_info.get('youtube_trailer', '?')}")
-            self.series_info_box.tmdb.setText(f"TMDB: {series_info.get('tmdb', '?')}")
+            self.series_info_box.duration.setText(f"Episode duration: {duration if (duration and duration != '0') else '?'} min")
+            self.series_info_box.rating.setText(f"Rating: {rating if (rating and rating != '0') else '?'}")
+            self.series_info_box.director.setText(f"Director: {director if director else '?'}")
+            self.series_info_box.cast.setText(f"Cast: {cast if cast else '?'}")
+            self.series_info_box.description.setText(f"Description: {plot if plot else '?'}")
+            self.series_info_box.trailer.setText(f"Trailer: {trailer if trailer else '?'}")
+            self.series_info_box.tmdb.setText(f"TMDB: {tmdb if (tmdb and tmdb != '0') else '?'}")
 
             #Update progress bar
             if not series_info:
@@ -875,6 +913,13 @@ class IPTVPlayerApp(QMainWindow):
             if not selected_item:
                 return
 
+            #Check if the item is already selected
+            if selected_item == self.prev_clicked_category_item[stream_type]:
+                return
+
+            #Save to previous clicked
+            self.prev_clicked_category_item[stream_type] = selected_item
+
             selected_item_text = selected_item.text()
             selected_item_data = selected_item.data(Qt.UserRole)
 
@@ -883,8 +928,9 @@ class IPTVPlayerApp(QMainWindow):
 
             self.set_progress_bar(0, "Loading items")
 
-            #Reset navigation level
-            self.series_navigation_level = 0
+            if stream_type == 'Series':
+                #Reset navigation level
+                self.series_navigation_level = 0
 
             #Clear items in list
             self.streaming_list_widgets[stream_type].clear()
@@ -993,23 +1039,34 @@ class IPTVPlayerApp(QMainWindow):
     def streaming_item_clicked(self, clicked_item):
         try:
             #Clear threadpool
-            self.threadpool.clear()
+            # self.threadpool.clear()
 
             #Check if clicked item is valid
             if not clicked_item:
                 return
 
+            #Check if clicked item is already selected
+            if (clicked_item == self.prev_clicked_streaming_item):
+                return
+
+            #Save to previous item
+            self.prev_clicked_streaming_item = clicked_item
+
             #Get clicked item data
             clicked_item_text = clicked_item.text()
             clicked_item_data = clicked_item.data(Qt.UserRole)
-            # print(f"name = {clicked_item_text}")
-
-            #Skip when back button or already loaded series info
-            if clicked_item.text() == self.go_back_text or self.series_navigation_level > 0:
-                return
 
             #Get stream type
-            stream_type = clicked_item_data['stream_type']
+            try:
+                stream_type = clicked_item_data['stream_type']
+            except:
+                stream_type = ''
+
+            # print(f"single click stream type {stream_type}")
+
+            #Skip when back button or already loaded series info
+            if clicked_item.text() == self.go_back_text or (stream_type == 'series' and self.series_navigation_level > 0):
+                return
 
             #Show EPG data if live tv clicked
             if stream_type == 'live':
@@ -1072,12 +1129,10 @@ class IPTVPlayerApp(QMainWindow):
                 self.fetch_series_info(clicked_item_data['series_id'], False)
 
         except Exception as e:
-            print(f"Failed: {e}")
+            print(f"Failed item single click: {e}")
 
     def streaming_item_double_clicked(self, clicked_item):
         try:
-            # print("Double clicked")
-
             #Check if clicked item is valid
             if not clicked_item:
                 return
@@ -1086,13 +1141,23 @@ class IPTVPlayerApp(QMainWindow):
             clicked_item_text = clicked_item.text()
             clicked_item_data = clicked_item.data(Qt.UserRole)
 
+            try:
+                stream_type = clicked_item_data['stream_type']
+            except:
+                stream_type = ''
+
+            #Prevent loading the same series navigation levels multiple times
+            if stream_type == 'series' and self.series_navigation_level < 2 and clicked_item == self.prev_double_clicked_streaming_item:
+                return
+
+            #Save to previous double clicked item
+            self.prev_double_clicked_streaming_item = clicked_item
+
             #Have different action depending on the navigation level
             match self.series_navigation_level:
                 case 0: #Highest level, either LIVE, VOD or series
                     if clicked_item_text == self.go_back_text:
                         return
-
-                    stream_type = clicked_item_data['stream_type']
 
                     if stream_type == 'live' or stream_type == 'movie':
                         self.play_item(clicked_item_data['url'])
@@ -1120,7 +1185,7 @@ class IPTVPlayerApp(QMainWindow):
                         self.play_item(clicked_item_data['url'])
 
         except Exception as e:
-            print(f"failed: {e}")
+            print(f"failed item double click: {e}")
 
     def go_back_to_level(self, series_navigation_level):
         self.set_progress_bar(0, "Loading items")
@@ -1200,12 +1265,38 @@ class IPTVPlayerApp(QMainWindow):
         self.animate_progress(0, 100, "Loading finished")
 
     def play_item(self, url):
+        if not url:
+            self.animate_progress(0, 100, "Stream URL not found")
+
+            #Create warning message box to indicate error
+            error_dialog = QMessageBox()
+            error_dialog.setIcon(QMessageBox.Warning)
+            error_dialog.setWindowTitle("Invalid stream URL")
+            error_dialog.setText("Invalid stream URL!\nPlease try again.")
+
+            #Set only OK button
+            error_dialog.setStandardButtons(QMessageBox.Ok)
+
+            #Show error dialog
+            error_dialog.exec_()
+            return
+
         if self.external_player_command:
             try:
                 # print(f"Going to play: {url}")
                 self.animate_progress(0, 100, "Loading player for streaming")
 
-                subprocess.Popen([self.external_player_command, url])
+                user_agent_argument = f":http-user-agent=Lavf53.32.100"
+                # command = [self.external_player_command, stream_url, user_agent_argument]
+ 
+                if is_linux:
+                    # Ensure the external player command is executable
+                    if not os.access(self.external_player_command, os.X_OK):
+                        self.animate_progress(0, 100, "Selected player is not executable")
+                        return
+
+                subprocess.Popen([self.external_player_command, url, user_agent_argument])
+                # subprocess.Popen([self.external_player_command, url])
             except:
                 self.animate_progress(0, 100, "Failed playing stream")
         else:
