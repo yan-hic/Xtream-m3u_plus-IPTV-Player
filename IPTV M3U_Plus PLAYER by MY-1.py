@@ -42,7 +42,7 @@ is_linux    = sys.platform.startswith('linux')
 class IPTVPlayerApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("IPTV Player V3.5")
+        self.setWindowTitle("IPTV Player V1.01")
         self.resize(1300, 900)
 
         self.user_data_file = 'userdata.ini'
