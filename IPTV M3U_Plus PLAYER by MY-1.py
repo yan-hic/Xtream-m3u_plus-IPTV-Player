@@ -23,7 +23,7 @@ from PyQt5.QtWidgets import (
     QListWidget, QWidget, QFileDialog, QCheckBox, QSizePolicy, QHBoxLayout,
     QDialog, QFormLayout, QDialogButtonBox, QTabWidget, QListWidgetItem,
     QSpinBox, QMenu, QAction, QTextEdit, QGridLayout, QMessageBox, QListView,
-    QTreeWidget, QTreeWidgetItem, QTreeView
+    QTreeWidget, QTreeWidgetItem, QTreeView, QAction, QMenu, QComboBox
 )
 
 from AccountManager import AccountManager
@@ -61,6 +61,8 @@ class IPTVPlayerApp(QMainWindow):
         self.path_to_settings_icon  = path.abspath(path.join(path.dirname(__file__), 'Images/settings_tab_icon.ico'))
 
         self.path_to_search_icon    = path.abspath(path.join(path.dirname(__file__), 'Images/search_bar_icon.ico'))
+        self.path_to_sorting_icon   = path.abspath(path.join(path.dirname(__file__), 'Images/sorting_icon.ico'))
+        self.path_to_clear_btn_icon = path.abspath(path.join(path.dirname(__file__), 'Images/clear_button_icon.ico'))
         self.path_to_go_back_icon   = path.abspath(path.join(path.dirname(__file__), 'Images/go_back_icon.ico'))
 
         self.path_to_account_icon       = path.abspath(path.join(path.dirname(__file__), 'Images/account_manager_icon.ico'))
@@ -130,13 +132,13 @@ class IPTVPlayerApp(QMainWindow):
 
         self.initTabWidget()
 
-        self.initSearchBars()
-
         self.initIPTVinfo()
 
         self.initCategoryListWidgets()
         self.initEntryListWidgets()
         self.initInfoBoxes()
+
+        self.initSearchBars()
 
         # self.initHomeTab()
         # self.initFavoritesTab()
@@ -144,6 +146,9 @@ class IPTVPlayerApp(QMainWindow):
         self.initSettingsTab()
 
         self.initProgressBar()        
+
+        #Load default sorting setting
+        self.loadDefaultSortingOrder()
 
         #Add widgets to tabs
         self.live_tab_layout.addWidget(self.category_search_bar_live, 0, 0)
@@ -196,6 +201,8 @@ class IPTVPlayerApp(QMainWindow):
 
         #Create misc icons
         self.search_icon    = QIcon(self.path_to_search_icon)
+        self.sorting_icon   = QIcon(self.path_to_sorting_icon)
+        self.clear_btn_icon = QIcon(self.path_to_clear_btn_icon)
         self.go_back_icon   = QIcon(self.path_to_go_back_icon)
 
     def initTabWidget(self):
@@ -233,52 +240,87 @@ class IPTVPlayerApp(QMainWindow):
         #Initialize search bars for category lists
         self.category_search_bar_live = QLineEdit()
         self.category_search_bar_live.setPlaceholderText("Search Live TV Categories...")
-        self.category_search_bar_live.setClearButtonEnabled(True)
-        self.add_search_icon(self.category_search_bar_live)
-        self.category_search_bar_live.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
-            self.category_search_bar_live, 'category', 'LIVE', self.category_list_widgets, self.category_search_history_list, self.category_search_history_list_idx)
+        self.configSearchBar(self.category_search_bar_live, 'category', 'LIVE', self.category_list_widgets, self.category_search_history_list, self.category_search_history_list_idx)
 
         self.category_search_bar_movies = QLineEdit()
         self.category_search_bar_movies.setPlaceholderText("Search Movies Categories...")
-        self.category_search_bar_movies.setClearButtonEnabled(True)
-        self.add_search_icon(self.category_search_bar_movies)
-        self.category_search_bar_movies.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
-            self.category_search_bar_movies, 'category', 'Movies', self.category_list_widgets, self.category_search_history_list, self.category_search_history_list_idx)
+        self.configSearchBar(self.category_search_bar_movies, 'category', 'Movies', self.category_list_widgets, self.category_search_history_list, self.category_search_history_list_idx)
 
         self.category_search_bar_series = QLineEdit()
         self.category_search_bar_series.setPlaceholderText("Search Series Categories...")
-        self.category_search_bar_series.setClearButtonEnabled(True)
-        self.add_search_icon(self.category_search_bar_series)
-        self.category_search_bar_series.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
-            self.category_search_bar_series, 'category', 'Series', self.category_list_widgets, self.category_search_history_list, self.category_search_history_list_idx)
+        self.configSearchBar(self.category_search_bar_series, 'category', 'Series', self.category_list_widgets, self.category_search_history_list, self.category_search_history_list_idx)
 
         #Initialize search bars for streaming content lists
         self.streaming_search_bar_live = QLineEdit()
         self.streaming_search_bar_live.setPlaceholderText("Search Live TV Channels...")
-        self.streaming_search_bar_live.setClearButtonEnabled(True)
-        self.add_search_icon(self.streaming_search_bar_live)
-        self.streaming_search_bar_live.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
-            self.streaming_search_bar_live, 'streaming', 'LIVE', self.streaming_list_widgets, self.streaming_search_history_list, self.streaming_search_history_list_idx)
+        self.configSearchBar(self.streaming_search_bar_live, 'streaming', 'LIVE', self.streaming_list_widgets, self.streaming_search_history_list, self.streaming_search_history_list_idx)
 
         self.streaming_search_bar_movies = QLineEdit()
         self.streaming_search_bar_movies.setPlaceholderText("Search Movies...")
-        self.streaming_search_bar_movies.setClearButtonEnabled(True)
-        self.add_search_icon(self.streaming_search_bar_movies)
-        self.streaming_search_bar_movies.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
-            self.streaming_search_bar_movies, 'streaming', 'Movies', self.streaming_list_widgets, self.streaming_search_history_list, self.streaming_search_history_list_idx)
+        self.configSearchBar(self.streaming_search_bar_movies, 'streaming', 'Movies', self.streaming_list_widgets, self.streaming_search_history_list, self.streaming_search_history_list_idx)
 
         self.streaming_search_bar_series = QLineEdit()
         self.streaming_search_bar_series.setPlaceholderText("Search Series...")
-        self.streaming_search_bar_series.setClearButtonEnabled(True)
-        self.add_search_icon(self.streaming_search_bar_series)
-        self.streaming_search_bar_series.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
-            self.streaming_search_bar_series, 'streaming', 'Series', self.streaming_list_widgets, self.streaming_search_history_list, self.streaming_search_history_list_idx)
+        self.configSearchBar(self.streaming_search_bar_series, 'streaming', 'Series', self.streaming_list_widgets, self.streaming_search_history_list, self.streaming_search_history_list_idx)
 
-    def add_search_icon(self, search_bar):
-        if self.search_icon.isNull():
-            self.search_icon = self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogContentsView)
+    def configSearchBar(self, search_bar, list_content_type, stream_type, list_widgets, search_history_list, search_history_list_idx):
+        #Create sorting actions
+        sort_a_z        = QAction("A-Z", self)
+        sort_z_a        = QAction("Z-A", self)
+        sort_disabled   = QAction("Sorting disabled", self)
 
+        #Add search icon
         search_bar.addAction(self.search_icon, QLineEdit.LeadingPosition)
+
+        #Create sorting action menu
+        sorting_menu = QMenu()
+        sorting_menu.setTitle("Set sorting order:")
+        sorting_menu.addActions([sort_a_z, sort_z_a, sort_disabled])
+
+        #Create sorting button
+        sort_action = QAction(self.sorting_icon, "sort", self)
+        sort_action.setMenu(sorting_menu)
+        search_bar.addAction(sort_action, QLineEdit.TrailingPosition)
+
+        #Connect functions to sorting actions
+        sort_a_z.triggered.connect(lambda e: self.sortList(e, search_bar, list_content_type, stream_type, list_widgets, True, 0))
+        sort_z_a.triggered.connect(lambda e: self.sortList(e, search_bar, list_content_type, stream_type, list_widgets, True, 1))
+        sort_disabled.triggered.connect(lambda e: self.sortList(e, search_bar, list_content_type, stream_type, list_widgets, False, 0))
+
+        #Create clear search button
+        clear_action = QAction(self.clear_btn_icon, "clear", self)
+        search_bar.addAction(clear_action, QLineEdit.TrailingPosition)
+
+        #Connect function to clear search action
+        clear_action.triggered.connect(lambda e: self.clearSearch(e, search_bar, list_content_type, stream_type, list_widgets, search_history_list_idx))
+
+        #Connect function to process search bar key presses
+        search_bar.keyPressEvent = lambda e: self.SearchBarKeyPressed(e, 
+            search_bar, list_content_type, stream_type, list_widgets, search_history_list, search_history_list_idx)
+
+    def clearSearch(self, e, search_bar, list_content_type, stream_type, list_widgets, history_list_idx):
+        #Clear search bar
+        search_bar.clear()
+
+        #Reset list history index to -1
+        history_list_idx[0] = -1
+
+        #Search for nothing so list will be reset
+        self.search_in_list(list_content_type, stream_type, "")
+
+    def sortList(self, e, search_bar, list_content_type, stream_type, list_widgets, sorting_enabled, sort_order):
+        #Get list
+        list_widget = list_widgets[stream_type]
+
+        #Enable or disable sorting
+        list_widget.setSortingEnabled(sorting_enabled)
+
+        #When sorting is enabled, set sort order, 0: A-Z, 1: Z-A
+        if sorting_enabled:
+            list_widget.sortItems(sort_order)
+        else:
+            #When sorting is disabled, reload list manually with current search bar text
+            self.search_in_list(list_content_type, stream_type, search_bar.text())
 
     def initIPTVinfo(self):
         self.iptv_info_text = QTextEdit()
@@ -432,6 +474,82 @@ class IPTVPlayerApp(QMainWindow):
         #TODO add favorties tab functionality
         pass
 
+    def loadDefaultSortingOrder(self):
+        sorting_order = ""
+
+        config = configparser.ConfigParser()
+        config.read(self.user_data_file)
+
+        if 'Sorting order' in config:
+            # self.external_player_command = config['ExternalPlayer'].get('Command', '')
+            sorting_order = config['Sorting order'].get('Order', '')
+
+        if not sorting_order:
+            #Set default order to A-Z
+            self.default_sorting_order_box.setCurrentText("A-Z")
+            self.setAllSortingOrder("A-Z")
+        else:
+            self.default_sorting_order_box.setCurrentText(sorting_order)
+            self.setAllSortingOrder(sorting_order)
+
+    def setAllSortingOrder(self, sorting_order):
+        match sorting_order:
+            case "A-Z":
+                self.category_list_live.setSortingEnabled(True)
+                self.category_list_movies.setSortingEnabled(True)
+                self.category_list_series.setSortingEnabled(True)
+
+                self.streaming_list_live.setSortingEnabled(True)
+                self.streaming_list_movies.setSortingEnabled(True)
+                self.streaming_list_series.setSortingEnabled(True)
+
+                self.category_list_live.sortItems(0)
+                self.category_list_movies.sortItems(0)
+                self.category_list_series.sortItems(0)
+
+                self.streaming_list_live.sortItems(0)
+                self.streaming_list_movies.sortItems(0)
+                self.streaming_list_series.sortItems(0)
+
+            case "Z-A":
+                self.category_list_live.setSortingEnabled(True)
+                self.category_list_movies.setSortingEnabled(True)
+                self.category_list_series.setSortingEnabled(True)
+
+                self.streaming_list_live.setSortingEnabled(True)
+                self.streaming_list_movies.setSortingEnabled(True)
+                self.streaming_list_series.setSortingEnabled(True)
+
+                self.category_list_live.sortItems(1)
+                self.category_list_movies.sortItems(1)
+                self.category_list_series.sortItems(1)
+
+                self.streaming_list_live.sortItems(1)
+                self.streaming_list_movies.sortItems(1)
+                self.streaming_list_series.sortItems(1)
+
+            case _:
+                self.category_list_live.setSortingEnabled(False)
+                self.category_list_movies.setSortingEnabled(False)
+                self.category_list_series.setSortingEnabled(False)
+
+                self.streaming_list_live.setSortingEnabled(False)
+                self.streaming_list_movies.setSortingEnabled(False)
+                self.streaming_list_series.setSortingEnabled(False)
+
+    def setDefaultSortingOrder(self, e, combobox):
+        sorting_order = combobox.currentText()
+
+        self.setAllSortingOrder(sorting_order)
+
+        config = configparser.ConfigParser()
+        config.read(self.user_data_file)
+
+        config['Sorting order'] = {'Order': sorting_order}
+
+        with open(self.user_data_file, 'w') as config_file:
+            config.write(config_file)
+
     def initSettingsTab(self):
         #Create items in settings tab
         self.settings_layout.setSpacing(20)
@@ -451,6 +569,10 @@ class IPTVPlayerApp(QMainWindow):
         self.keep_on_top_checkbox.setToolTip("Keep the application on top of all windows")
         self.keep_on_top_checkbox.stateChanged.connect(self.toggle_keep_on_top)
 
+        self.default_sorting_order_box = QComboBox()
+        self.default_sorting_order_box.addItems(["A-Z", "Z-A", "Sorting disabled"])
+        self.default_sorting_order_box.currentTextChanged.connect(lambda e: self.setDefaultSortingOrder(e, self.default_sorting_order_box))
+
         self.cache_on_startup_checkbox = QCheckBox("Startup with cached data")
         self.cache_on_startup_checkbox.setToolTip("Loads the cached IPTV data on startup to reduce startup time.\nNote that the cached data only changes if you manually reload it once in a while.")
         self.cache_on_startup_checkbox.stateChanged.connect(self.toggle_cache_on_startup)
@@ -460,9 +582,11 @@ class IPTVPlayerApp(QMainWindow):
         self.reload_data_btn.setToolTip("Click this to manually reload the IPTV data.\nNote that this only has effect if \'Startup with cached data\' is checked.")
 
         #Add widgets to settings tab layout
-        self.settings_layout.addWidget(self.address_book_button,        0, 0)
-        self.settings_layout.addWidget(self.choose_player_button,       0, 1)
-        self.settings_layout.addWidget(self.keep_on_top_checkbox,       1, 0)
+        self.settings_layout.addWidget(self.address_book_button,            0, 0)
+        self.settings_layout.addWidget(self.choose_player_button,           0, 1)
+        self.settings_layout.addWidget(self.keep_on_top_checkbox,           1, 0)
+        self.settings_layout.addWidget(QLabel("Default sorting order: "),   2, 0)
+        self.settings_layout.addWidget(self.default_sorting_order_box,      2, 1)
         # self.settings_layout.addWidget(self.cache_on_startup_checkbox,  2, 0)
         # self.settings_layout.addWidget(self.reload_data_btn,            3, 0)
 
