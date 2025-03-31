@@ -16,6 +16,7 @@ Download the latest version here: [Latest releases](https://github.com/Youri666/
 - **Movies and series information:** Additional movies and series information e.g. movie/series cover, description, cast, trailer, TMDB, etc.
 - **Series navigation:** Access series categories and specific episodes with efficient 'Go Back' functionality in series playlist.
 - **Search bar history:** By using the up and down keys you can access the previously searched texts in the search bars.
+- **Sorting playlists:** Each list can be sorted A-Z, Z-A or sorting can be disabled. The default sorting can be configured in the settings tab.
 - **Info tab:** Information about IPTV account status.
 - **Error Handling:** Graceful handling of loading issues.
 - **External Player Support:** Play channels/movies/series using VLC or SMPlayer.
@@ -24,6 +25,7 @@ Download the latest version here: [Latest releases](https://github.com/Youri666/
 
 ## **Future plans**
 - **Home tab:** Home tab with previously watched and popular movies and series.
+- **Favorites tab:** Find your favorite TV channels, movies and series.
 - **TMDB support:** Much more information about movies and series with the TMDB API.
 - **Improve startup loading time:** Improve loading time at startup by optionally loading the IPTV data from cache.
 - **Dark theme**
