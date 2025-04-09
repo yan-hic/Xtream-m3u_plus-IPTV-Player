@@ -421,7 +421,10 @@ class IPTVPlayerApp(QMainWindow):
 
         #Create Live TV Channel name label
         self.EPG_box_label = QLabel("Select channel to view Live TV info")
-        self.EPG_box_label.setFont(QFont('Arial', 14))
+        self.EPG_box_label.setFont(QFont('Arial', 14, QFont.Bold))
+
+        #Enable wordwrap for TV channel name
+        self.EPG_box_label.setWordWrap(True)
 
         #Create entry info window
         self.live_EPG_info = QTreeWidget()
